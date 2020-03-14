@@ -21,10 +21,7 @@ class DataWorkspace(object):
         hidden_states = torch.load(self.make_hidden_state_filename(filename, layer_idx))['hidden_state']
         hid_joined = []
         for hid in hidden_states:
-            x = [y.squeeze(0) for y in torch.split(hid, 1)]
-            if hid.dim() > 3:
-                x = [y.permute(1, 0, 2).contiguous().view(y.size(2), -1) for y in x]
-            hid_joined.extend(x)
+            hid_joined.extend(y.squeeze(0) for y in torch.split(hid, 1))
         ds.attach('hidden_state', hid_joined)
         return ds
 

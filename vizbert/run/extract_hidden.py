@@ -13,14 +13,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--folder', '-f', type=Path, required=True)
     parser.add_argument('--layer-idx', '-l', type=int, required=True)
-    parser.add_argument('--extract-model', type=str, default='gpt2', choices=['gpt2', 'bert-base-uncased'])
+    parser.add_argument('--model', type=str, default='gpt2')
     parser.add_argument('--batch-size', '-bsz', type=int, default=50)
     args = parser.parse_args()
 
-    tokenizer = AutoTokenizer.from_pretrained(args.extract_model)
-    config = AutoConfig.from_pretrained(args.extract_model)
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    config = AutoConfig.from_pretrained(args.model)
     config.output_hidden_states = True
-    model = AutoModel.from_pretrained(args.extract_model, config=config)
+    model = AutoModel.from_pretrained(args.model, config=config)
 
     workspace = DataWorkspace(args.folder)
     train_ds, dev_ds, test_ds = workspace.load_conll_splits()
@@ -33,9 +33,9 @@ def main():
         loader = tud.DataLoader(ds, collate_fn=collator, batch_size=args.batch_size, pin_memory=True)
         feeder = TextDatasetInputFeeder(loader, device='cuda')
         serializer = BufferedFileOutputSerializer(workspace.make_hidden_state_filename(name, args.layer_idx))
-        if 'gpt2' in args.extract_model:
+        if 'gpt2' in args.model:
             extractor = Gpt2HiddenStateExtractor(args.layer_idx)
-        elif 'bert' in args.extract_model:
+        elif 'bert' in args.model:
             extractor = BertHiddenStateExtractor(args.layer_idx)
         state_extractor = ModelStateExtractor(model, feeder, serializer, output_extractors=[extractor])
         state_extractor.extract()

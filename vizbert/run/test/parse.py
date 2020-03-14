@@ -1,13 +1,8 @@
 from pathlib import Path
 import argparse
 
-from torch.optim import Adam
-from tqdm import tqdm, trange
-from transformers import AutoTokenizer
-import torch.utils.data as tud
-
-from vizbert.data import InnerProductProbe, ConllDistanceCollator, DataWorkspace, DistanceMatrixLoss, ConllDataset
-from vizbert.utils import compute_mst, compute_uuas, compute_coloring, compute_distance_matrix
+from vizbert.data import DataWorkspace
+from vizbert.utils import compute_mst, compute_uuas, compute_distance_matrix
 
 
 def main():
@@ -24,6 +19,7 @@ def main():
     print([tok['id'] for tok in tokenlist])
     tokenlist.to_tree().print_tree()
     dm = compute_distance_matrix(tokenlist)
+    print(dm)
     pred_tree = compute_mst(dm, tokenlist)
     pred_tree.print_tree()
     print(compute_uuas(pred_tree, tokenlist.to_tree()))
