@@ -86,6 +86,11 @@ def compute_distance_matrix(tokens: TokenList):
             child.token['parent'] = node
             set_parent_attr(child)
 
+    def del_parent_attr(node):
+        for child in node.children:
+            del child.token['parent']
+            del_parent_attr(child)
+
     def compute_distances(source_node):
         closed_set = set()
         open_set = [(0, source_node)]
@@ -108,6 +113,7 @@ def compute_distance_matrix(tokens: TokenList):
     tree = tokens.to_tree()
     set_parent_attr(tree)
     compute_pairwise_distances(tree)
+    del_parent_attr(tree)
     return distance_matrix
 
 
