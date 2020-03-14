@@ -61,9 +61,7 @@ class TextDatasetInputFeeder(InputFeeder):
         model.eval()
         with torch.no_grad():
             outputs = model(inp.token_ids.to(self.device), attention_mask=inp.attention_mask.to(self.device))
-            out1 = outputs[0].cpu().detach()
-            out2 = [x.cpu().detach() for x in outputs[1]]
-        return out1, out2
+        return outputs
 
     def __iter__(self):
         self._iter = iter(self.dataloader)

@@ -23,4 +23,14 @@ class Gpt2HiddenStateExtractor(OutputExtractor):
         hidden = output[1][self.layer_idx]
         if self.last_only:
             hidden = hidden[-1]
-        return dict(hidden_state=hidden)
+        return dict(hidden_state=hidden.cpu().detach())
+
+
+class BertHiddenStateExtractor(OutputExtractor):
+
+    def __init__(self, layer_idx: int):
+        self.layer_idx = layer_idx
+
+    def __call__(self, output):
+        hidden = output[2][self.layer_idx]
+        return dict(hidden_state=hidden.cpu().detach())

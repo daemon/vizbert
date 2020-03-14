@@ -1,3 +1,4 @@
+from torch.nn.init import xavier_uniform_
 import torch
 import torch.nn as nn
 
@@ -7,7 +8,8 @@ class InnerProductProbe(nn.Module):
     def __init__(self, length: int):
         super().__init__()
         self.length = length
-        self.b = nn.Parameter(torch.Tensor(length, length).uniform_(-0.01, 0.01), requires_grad=True)
+        self.b = nn.Parameter(torch.Tensor(length, length), requires_grad=True)
+        xavier_uniform_(self.b.data)
 
     def forward(self, x):
         seq_len = x.size(1)
