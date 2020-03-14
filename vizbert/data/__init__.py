@@ -1,2 +1,2 @@
 from .dataset import *
-from .matrix import *
+from .probe import *
