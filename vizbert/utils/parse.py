@@ -2,10 +2,14 @@ from itertools import chain
 from typing import Sequence, Union
 
 from conllu.models import TokenList, TokenTree
+from scipy.stats import spearmanr
 import torch
 import numpy as np
 
 from .id_wrap import id_wrap
+
+
+_SF_PUNCT = {"''", ',', '.', ':', '``', '-LRB-', '-RRB-'}
 
 
 def compute_uuas(pred_tree: TokenTree,
@@ -20,7 +24,7 @@ def compute_uuas(pred_tree: TokenTree,
     x2[x2 != 1] = 0
 
     if ignore_punct:
-        punct_ids = [tok['id'] for tok in gold_tokens if tok['deprel'] == 'punct' and tok['id'] <= x2.size(0)]
+        punct_ids = [tok['id'] for tok in gold_tokens if is_punctuation(tok['form']) and tok['id'] <= x2.size(0)]
         for punct_id in punct_ids:
             x2[:, punct_id - 1] = 0
             x2[punct_id - 1, :] = 0
@@ -29,6 +33,20 @@ def compute_uuas(pred_tree: TokenTree,
     if reduce:
         return (num / x2.sum()).item()
     return int(num.item()) // 2, int(x2.sum().item()) // 2
+
+
+def compute_dspr(pred_matrix, gold_tree: TokenTree):
+    gold_vec = compute_distance_matrix(gold_tree).contiguous().view(-1)
+    pred_vec = pred_matrix.contiguous().view(-1)
+    pred_vec = pred_vec[gold_vec != 0]
+    gold_vec = gold_vec[gold_vec != 0]
+    return spearmanr(pred_vec.tolist(), gold_vec.tolist())[0]
+
+
+def is_punctuation(token, style='stanford'):
+    if style == 'stanford':
+        return token in _SF_PUNCT
+    raise NotImplementedError
 
 
 def flatten_tree(tree: TokenTree, token_list=None):
@@ -46,7 +64,7 @@ def compute_mst(distance_matrix: torch.Tensor,
     open_set = set([id_wrap(x) for x in tokens.copy()])
     closed_set = set()
     if ignore_punct:
-        open_set = open_set - set(list(filter(lambda x: x.obj['deprel'] == 'punct', open_set)))
+        open_set = open_set - set(list(filter(lambda x: is_punctuation(x.obj['form']), open_set)))
     treenodes = {}
     root = None
     while open_set:

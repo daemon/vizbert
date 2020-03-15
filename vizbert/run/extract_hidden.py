@@ -5,7 +5,7 @@ from transformers import AutoTokenizer, AutoModel, AutoConfig
 import torch.utils.data as tud
 
 from vizbert.data import ConllTextCollator, DataWorkspace
-from vizbert.extract import ModelStateExtractor, Gpt2HiddenStateExtractor, TextDatasetInputFeeder, \
+from vizbert.extract import ModelStateExtractor, Gpt2HiddenStateExtractor, TransformerInputFeeder, \
     BufferedFileOutputSerializer, BertHiddenStateExtractor
 
 
@@ -15,9 +15,13 @@ def main():
     parser.add_argument('--layer-idx', '-l', type=int, required=True)
     parser.add_argument('--model', type=str, default='gpt2')
     parser.add_argument('--batch-size', '-bsz', type=int, default=50)
+    parser.add_argument('--do-basic-tokenize', action='store_true')
     args = parser.parse_args()
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    tok_config = dict()
+    if 'bert' in args.model:
+        tok_config = dict(do_basic_tokenize=args.do_basic_tokenize)
+    tokenizer = AutoTokenizer.from_pretrained(args.model, **tok_config)
     config = AutoConfig.from_pretrained(args.model)
     config.output_hidden_states = True
     model = AutoModel.from_pretrained(args.model, config=config)
@@ -31,7 +35,7 @@ def main():
     model.config.output_hidden = True
     for ds, name in zip((train_ds, dev_ds, test_ds), ('train.gold.conll', 'dev.gold.conll', 'test.gold.conll')):
         loader = tud.DataLoader(ds, collate_fn=collator, batch_size=args.batch_size, pin_memory=True)
-        feeder = TextDatasetInputFeeder(loader, device='cuda')
+        feeder = TransformerInputFeeder(loader, device='cuda')
         serializer = BufferedFileOutputSerializer(workspace.make_hidden_state_filename(name, args.layer_idx))
         if 'gpt2' in args.model:
             extractor = Gpt2HiddenStateExtractor(args.layer_idx)

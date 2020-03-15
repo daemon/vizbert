@@ -45,7 +45,7 @@ class OutputSerializer(object):
         pass
 
 
-class TextDatasetInputFeeder(InputFeeder):
+class TransformerInputFeeder(InputFeeder):
 
     def __init__(self, dataloader, device='cpu'):
         self.dataloader = dataloader
@@ -60,7 +60,12 @@ class TextDatasetInputFeeder(InputFeeder):
     def feed_input(self, model, inp: TextBatch):
         model.eval()
         with torch.no_grad():
-            outputs = model(inp.token_ids.to(self.device), attention_mask=inp.attention_mask.to(self.device))
+            other_data = dict()
+            if model.base_model_prefix == 'bert':
+                other_data = dict(token_type_ids=torch.ones_like(inp.token_ids).to(self.device))
+            outputs = model(inp.token_ids.to(self.device),
+                            attention_mask=inp.attention_mask.to(self.device),
+                            **other_data)
         return outputs
 
     def __iter__(self):

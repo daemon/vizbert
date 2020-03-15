@@ -11,19 +11,21 @@ import torch
 import torch.utils.data as tud
 
 from vizbert.data import InnerProductProbe, ConllDistanceCollator, DataWorkspace, DistanceMatrixLoss, TrainingWorkspace
-from vizbert.utils import compute_mst, compute_uuas
+from vizbert.utils import compute_mst, compute_uuas, compute_dspr
 
 
 def main():
-    def evaluate(loader, eval_uuas=False):
+    def evaluate(loader, test_eval=False):
         probe.eval()
         score = 0
-        tot = 0
+        dspr_score = 0
+        dspr_tot = 0
+        uuas_tot = 0
         pbar = tqdm(loader, total=len(loader), position=1)
         with torch.no_grad():
             for batch in pbar:
                 scores_batch = probe(batch.hidden_states.to(args.device))
-                if eval_uuas:
+                if test_eval:
                     scores_batch = scores_batch.cpu()
                     for scores, mask, tokenlist in zip(scores_batch, batch.mask, batch.token_list_list):
                         length = len(tokenlist)
@@ -32,15 +34,21 @@ def main():
                         uuas, uuas_len = compute_uuas(pred_tree, tokenlist.to_tree(), reduce=False)
                         if np.isnan(uuas):  # ignore single-word examples
                             continue
+                        dspr = compute_dspr(scores, tokenlist.to_tree())
+                        if not np.isnan(dspr):
+                            dspr_score += dspr
+                            dspr_tot += 1
                         score += uuas
-                        tot += uuas_len
-                    pbar.set_postfix(dict(uuas=f'{score / tot:.3}'))
+                        uuas_tot += uuas_len
+                    pbar.set_postfix(dict(uuas=f'{score / uuas_tot:.3}', dspr=f'{dspr_score / dspr_tot:.3}'))
                 else:
                     loss = criterion(scores_batch, batch.distance_matrix.to(args.device), batch.mask.to(args.device))
                     score += loss.item() * scores_batch.size(0)
-                    tot += scores_batch.size(0)
-                    pbar.set_postfix(dict(loss=f'{score / tot:.3}'))
-        return score / tot
+                    uuas_tot += scores_batch.size(0)
+                    pbar.set_postfix(dict(loss=f'{score / uuas_tot:.3}'))
+        if test_eval:
+            return score / uuas_tot, dspr_score / dspr_tot
+        return score / uuas_tot
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--data-folder', '-df', type=Path, required=True)
@@ -55,14 +63,19 @@ def main():
     parser.add_argument('--num-workers', type=int)
     parser.add_argument('--load-model', action='store_true')
     parser.add_argument('--eval-only', action='store_true')
+    parser.add_argument('--do-basic-tokenize', action='store_true')
     args = parser.parse_args()
 
     training_ws = TrainingWorkspace(args.workspace)
     probe = InnerProductProbe(args.probe_length)
     if args.load_model:
         training_ws.load_model(probe)
+    probe.to(args.device)
 
-    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
+    tok_config = dict()
+    if 'bert' in args.tokenizer:
+        tok_config = dict(do_basic_tokenize=args.do_basic_tokenize)
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer, **tok_config)
     collator = ConllDistanceCollator(tokenizer)
     if args.num_workers is None:
         args.num_workers = mp.cpu_count()
@@ -77,8 +90,8 @@ def main():
     if args.eval_only:
         test_ds, = data_ws.load_conll_splits(attach_hidden=True, layer_idx=args.layer_idx, splits=(data_ws.test_name,))
         test_loader = tud.DataLoader(test_ds, batch_size=args.batch_size, pin_memory=True, collate_fn=collator, num_workers=args.num_workers)
-        uuas = evaluate(test_loader, eval_uuas=True)
-        print(uuas)
+        uuas, dspr = evaluate(test_loader, test_eval=True)
+        print(uuas, dspr)
         return
 
     train_ds, dev_ds, test_ds = data_ws.load_conll_splits(attach_hidden=True, layer_idx=args.layer_idx)
@@ -86,7 +99,6 @@ def main():
     dev_loader = tud.DataLoader(dev_ds, batch_size=args.batch_size, pin_memory=True, collate_fn=collator, num_workers=args.num_workers)
     test_loader = tud.DataLoader(test_ds, batch_size=args.batch_size, pin_memory=True, collate_fn=collator, num_workers=args.num_workers)
 
-    probe.to(args.device)
     best_dev_loss = 0
     for epoch_idx in trange(args.num_epochs, position=0):
         probe.train()
@@ -105,9 +117,10 @@ def main():
             lr /= 10
             optimizer = Adam(params, lr=lr)
             best_dev_loss = dev_loss
-    uuas = evaluate(test_loader, eval_uuas=True)
-    print(uuas)
+    uuas, dspr = evaluate(test_loader, test_eval=True)
+    print(uuas, dspr)
     training_ws.summary_writer.add_scalar('Test/UUAS', uuas)
+    training_ws.summary_writer.add_scalar('Test/DSPR', dspr)
 
 
 if __name__ == '__main__':
