@@ -111,7 +111,7 @@ def merge_by_segmentation(hidden_states, coloring, op=torch.mean):
         last_color = color
     if len(buffer) > 0:
         merged_states.append(op(torch.stack(buffer, 0), 0))
-    return torch.stack(merged_states)
+    return torch.cat(merged_states)
 
 
 def compute_coloring(tokenizer, sentence) -> Sequence[int]:

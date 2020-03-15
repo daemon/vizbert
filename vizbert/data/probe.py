@@ -1,4 +1,3 @@
-from torch.nn.init import xavier_uniform_
 import torch
 import torch.nn as nn
 
@@ -10,8 +9,7 @@ class InnerProductProbe(nn.Module):
         self.length = length
         if max_rank is None:
             max_rank = length
-        self.b = nn.Parameter(torch.Tensor(max_rank, length), requires_grad=True)
-        xavier_uniform_(self.b.data)
+        self.b = nn.Parameter(torch.Tensor(max_rank, length).uniform_(-0.05, 0.05), requires_grad=True)
 
     def forward(self, x):
         seq_len = x.size(1)

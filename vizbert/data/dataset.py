@@ -93,7 +93,7 @@ class ConllDistanceCollator(object):
             dist_matrix = compute_distance_matrix(ex)
             sentence = ' '.join([x['form'] for x in ex])
             coloring = compute_coloring(self.tokenizer, sentence)
-            hid = merge_by_segmentation(hid, coloring).squeeze(1)
+            hid = merge_by_segmentation(hid, coloring)
             hid_lst.append(hid)
             assert dist_matrix.size(0) == hid.size(0)
             matrices.append(dist_matrix)
