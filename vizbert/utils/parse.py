@@ -118,6 +118,6 @@ def compute_coloring(tokenizer, sentence) -> Sequence[int]:
     coloring = []
     last_color = 0
     for word in sentence.split(' '):
-        coloring.extend([last_color] * len(tokenizer.tokenize(word)))
+        coloring.extend([last_color] * len(tokenizer.tokenize(f' {word}')))
         last_color = 1 - last_color
     return coloring

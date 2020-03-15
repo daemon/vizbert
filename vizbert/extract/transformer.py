@@ -23,7 +23,7 @@ class Gpt2HiddenStateExtractor(OutputExtractor):
         hidden = output[1][self.layer_idx]
         if self.last_only:
             hidden = hidden[-1]
-        return dict(hidden_state=hidden.permute(1, 0, 2).contiguous().view(hidden.size(1), -1).cpu().detach())
+        return dict(hidden_state=hidden.permute(0, 2, 1, 3).contiguous().view(hidden.size(0), hidden.size(2), -1).cpu().detach())
 
 
 class BertHiddenStateExtractor(OutputExtractor):
