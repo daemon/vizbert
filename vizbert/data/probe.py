@@ -26,4 +26,6 @@ class DistanceMatrixLoss(nn.Module):
         super().__init__()
 
     def forward(self, scores, labels, mask):
-        return (mask * torch.abs(scores - labels)).sum() / mask.sum()
+        sq_lengths = mask.view(mask.size(0), -1).sum(1)
+        l1_diff = (mask * torch.abs(scores - labels)).view(labels.size(0), -1).sum(1)
+        return torch.mean(l1_diff / sq_lengths)

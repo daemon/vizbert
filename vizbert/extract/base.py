@@ -62,7 +62,7 @@ class TransformerInputFeeder(InputFeeder):
         with torch.no_grad():
             other_data = dict()
             if model.base_model_prefix == 'bert':
-                other_data = dict(token_type_ids=torch.ones_like(inp.token_ids).to(self.device))
+                other_data = dict(token_type_ids=torch.zeros_like(inp.token_ids).to(self.device))
             outputs = model(inp.token_ids.to(self.device),
                             attention_mask=inp.attention_mask.to(self.device),
                             **other_data)

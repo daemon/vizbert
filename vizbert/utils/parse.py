@@ -38,8 +38,6 @@ def compute_uuas(pred_tree: TokenTree,
 def compute_dspr(pred_matrix, gold_tree: TokenTree):
     gold_vec = compute_distance_matrix(gold_tree).contiguous().view(-1)
     pred_vec = pred_matrix.contiguous().view(-1)
-    pred_vec = pred_vec[gold_vec != 0]
-    gold_vec = gold_vec[gold_vec != 0]
     return spearmanr(pred_vec.tolist(), gold_vec.tolist())[0]
 
 

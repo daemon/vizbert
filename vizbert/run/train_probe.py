@@ -4,6 +4,7 @@ import multiprocessing as mp
 import sys
 
 from torch.optim import Adam
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from tqdm import tqdm, trange
 from transformers import AutoTokenizer
 import numpy as np
@@ -85,6 +86,7 @@ def main():
     params = list(filter(lambda x: x.requires_grad, probe.parameters()))
     lr = args.lr
     optimizer = Adam(params, lr=lr)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=0)
 
     data_ws = DataWorkspace(args.data_folder)
     if args.eval_only:
@@ -99,7 +101,6 @@ def main():
     dev_loader = tud.DataLoader(dev_ds, batch_size=args.batch_size, pin_memory=True, collate_fn=collator, num_workers=args.num_workers)
     test_loader = tud.DataLoader(test_ds, batch_size=args.batch_size, pin_memory=True, collate_fn=collator, num_workers=args.num_workers)
 
-    best_dev_loss = 0
     for epoch_idx in trange(args.num_epochs, position=0):
         probe.train()
         pbar = tqdm(train_loader, total=len(train_loader), position=1)
@@ -111,12 +112,9 @@ def main():
             optimizer.step()
             pbar.set_postfix(dict(loss=f'{loss.item():.3}'))
         dev_loss = evaluate(dev_loader)
+        scheduler.step(dev_loss)
         training_ws.summary_writer.add_scalar('Dev/Loss', dev_loss, epoch_idx)
         training_ws.save_model(probe)
-        if dev_loss >= best_dev_loss:
-            lr /= 10
-            optimizer = Adam(params, lr=lr)
-            best_dev_loss = dev_loss
     uuas, dspr = evaluate(test_loader, test_eval=True)
     print(uuas, dspr)
     training_ws.summary_writer.add_scalar('Test/UUAS', uuas)
