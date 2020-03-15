@@ -8,22 +8,45 @@ import numpy as np
 from .id_wrap import id_wrap
 
 
-def compute_uuas(pred_tree: TokenTree, gold_tree: TokenTree):
-    treelen1 = tree_length(pred_tree)
-    treelen2 = tree_length(pred_tree)
-    assert treelen1 == treelen2
+def compute_uuas(pred_tree: TokenTree,
+                 gold_tree: TokenTree,
+                 reduce=True,
+                 ignore_punct=True):
     x1 = compute_distance_matrix(pred_tree)
     x2 = compute_distance_matrix(gold_tree)
+    x2 = x2[:x1.size(0), :x1.size(1)]
+    gold_tokens = flatten_tree(gold_tree)
     x1[x1 != 1] = 0
     x2[x2 != 1] = 0
-    x1 = x1.view(-1)
-    x2 = x2.view(-1)
-    return ((x2 * (x1 == x2).float()).sum() / x2.sum()).item()
+
+    if ignore_punct:
+        punct_ids = [tok['id'] for tok in gold_tokens if tok['deprel'] == 'punct' and tok['id'] <= x2.size(0)]
+        for punct_id in punct_ids:
+            x2[:, punct_id - 1] = 0
+            x2[punct_id - 1, :] = 0
+
+    num = (x2 * (x1 == x2).float()).sum()
+    if reduce:
+        return (num / x2.sum()).item()
+    return int(num.item()) // 2, int(x2.sum().item()) // 2
 
 
-def compute_mst(distance_matrix: torch.Tensor, tokens: TokenList) -> TokenTree:
+def flatten_tree(tree: TokenTree, token_list=None):
+    if token_list is None:
+        token_list = []
+    token_list.append(tree.token)
+    for child in tree.children:
+        flatten_tree(child, token_list)
+    return token_list
+
+
+def compute_mst(distance_matrix: torch.Tensor,
+                tokens: TokenList,
+                ignore_punct=True) -> TokenTree:
     open_set = set([id_wrap(x) for x in tokens.copy()])
     closed_set = set()
+    if ignore_punct:
+        open_set = open_set - set(list(filter(lambda x: x.obj['deprel'] == 'punct', open_set)))
     treenodes = {}
     root = None
     while open_set:
@@ -85,10 +108,10 @@ def compute_distance_matrix(tokens: Union[TokenList, TokenTree]) -> torch.Tensor
             compute_pairwise_distances(child)
 
     if isinstance(tokens, TokenList):
-        length = len(tokens)
+        length = max(tok['id'] for tok in tokens)
         tree = tokens.to_tree()
     else:
-        length = tree_length(tokens)
+        length = max(tok['id'] for tok in flatten_tree(tokens))
         tree = tokens
     distance_matrix = torch.zeros(length, length)
     set_parent_attr(tree)

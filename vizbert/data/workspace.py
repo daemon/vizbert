@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from pathlib import Path
+import shutil
 
+from torch.utils.tensorboard import SummaryWriter
 import torch
 
 from vizbert.data import ConllDataset
@@ -25,11 +27,33 @@ class DataWorkspace(object):
         ds.attach('hidden_state', hid_joined)
         return ds
 
-    def load_conll_splits(self, attach_hidden=False, layer_idx=None):
+    def load_conll_splits(self, attach_hidden=False, layer_idx=None, splits=None):
+        if splits is None:
+            splits = (self.train_name, self.dev_name, self.test_name)
         if not attach_hidden:
-            return ConllDataset.from_file(self.folder / self.train_name),\
-                   ConllDataset.from_file(self.folder / self.dev_name),\
-                   ConllDataset.from_file(self.folder / self.test_name)
-        return self.load_attached_hidden_state_dataset(self.train_name, layer_idx),\
-               self.load_attached_hidden_state_dataset(self.dev_name, layer_idx),\
-               self.load_attached_hidden_state_dataset(self.test_name, layer_idx)
+            return [ConllDataset.from_file(self.folder / x) for x in splits]
+        return [self.load_attached_hidden_state_dataset(x, layer_idx) for x in splits]
+
+
+@dataclass
+class TrainingWorkspace(object):
+    folder: Path
+    model_name = 'model.pt'
+
+    def __post_init__(self):
+        self.log_path = self.folder / 'logs'
+        try:
+            self.folder.mkdir()
+        except:
+            pass
+        try:
+            shutil.rmtree(str(self.log_path), ignore_errors=True)
+        except:
+            pass
+        self.summary_writer = SummaryWriter(str(self.log_path))
+
+    def save_model(self, model: torch.nn.Module):
+        torch.save(model.state_dict(), self.folder / self.model_name)
+
+    def load_model(self, model: torch.nn.Module):
+        model.load_state_dict(torch.load(self.folder / self.model_name, lambda s, l: s))

@@ -10,7 +10,7 @@ import numpy as np
 import torch
 import torch.utils.data as tud
 
-from vizbert.data import InnerProductProbe, ConllDistanceCollator, DataWorkspace, DistanceMatrixLoss
+from vizbert.data import InnerProductProbe, ConllDistanceCollator, DataWorkspace, DistanceMatrixLoss, TrainingWorkspace
 from vizbert.utils import compute_mst, compute_uuas
 
 
@@ -29,11 +29,11 @@ def main():
                         length = len(tokenlist)
                         scores = scores[:length, :length]
                         pred_tree = compute_mst(scores, tokenlist)
-                        uuas = compute_uuas(pred_tree, tokenlist.to_tree())
+                        uuas, uuas_len = compute_uuas(pred_tree, tokenlist.to_tree(), reduce=False)
                         if np.isnan(uuas):  # ignore single-word examples
                             continue
                         score += uuas
-                        tot += 1
+                        tot += uuas_len
                     pbar.set_postfix(dict(uuas=f'{score / tot:.3}'))
                 else:
                     loss = criterion(scores_batch, batch.distance_matrix.to(args.device), batch.mask.to(args.device))
@@ -43,7 +43,8 @@ def main():
         return score / tot
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--folder', '-f', type=Path)
+    parser.add_argument('--data-folder', '-df', type=Path, required=True)
+    parser.add_argument('--workspace', '-w', type=Path, required=True)
     parser.add_argument('--probe-length', type=int, default=768)
     parser.add_argument('--tokenizer', type=str, default='gpt2')
     parser.add_argument('--batch-size', '-bsz', type=int, default=20)
@@ -52,9 +53,15 @@ def main():
     parser.add_argument('--device', type=torch.device, default='cuda:0')
     parser.add_argument('--layer-idx', '-l', type=int, default=6)
     parser.add_argument('--num-workers', type=int)
+    parser.add_argument('--load-model', action='store_true')
+    parser.add_argument('--eval-only', action='store_true')
     args = parser.parse_args()
 
+    training_ws = TrainingWorkspace(args.workspace)
     probe = InnerProductProbe(args.probe_length)
+    if args.load_model:
+        training_ws.load_model(probe)
+
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     collator = ConllDistanceCollator(tokenizer)
     if args.num_workers is None:
@@ -66,15 +73,22 @@ def main():
     lr = args.lr
     optimizer = Adam(params, lr=lr)
 
-    workspace = DataWorkspace(args.folder)
-    train_ds, dev_ds, test_ds = workspace.load_conll_splits(attach_hidden=True, layer_idx=args.layer_idx)
+    data_ws = DataWorkspace(args.data_folder)
+    if args.eval_only:
+        test_ds, = data_ws.load_conll_splits(attach_hidden=True, layer_idx=args.layer_idx, splits=(data_ws.test_name,))
+        test_loader = tud.DataLoader(test_ds, batch_size=args.batch_size, pin_memory=True, collate_fn=collator, num_workers=args.num_workers)
+        uuas = evaluate(test_loader, eval_uuas=True)
+        print(uuas)
+        return
+
+    train_ds, dev_ds, test_ds = data_ws.load_conll_splits(attach_hidden=True, layer_idx=args.layer_idx)
     train_loader = tud.DataLoader(train_ds, batch_size=args.batch_size, pin_memory=True, collate_fn=collator, shuffle=True, num_workers=args.num_workers)
     dev_loader = tud.DataLoader(dev_ds, batch_size=args.batch_size, pin_memory=True, collate_fn=collator, num_workers=args.num_workers)
     test_loader = tud.DataLoader(test_ds, batch_size=args.batch_size, pin_memory=True, collate_fn=collator, num_workers=args.num_workers)
 
     probe.to(args.device)
     best_dev_loss = 0
-    for _ in trange(args.num_epochs, position=0):
+    for epoch_idx in trange(args.num_epochs, position=0):
         probe.train()
         pbar = tqdm(train_loader, total=len(train_loader), position=1)
         for idx, batch in enumerate(pbar):
@@ -85,11 +99,15 @@ def main():
             optimizer.step()
             pbar.set_postfix(dict(loss=f'{loss.item():.3}'))
         dev_loss = evaluate(dev_loader)
+        training_ws.summary_writer.add_scalar('Dev/Loss', dev_loss, epoch_idx)
+        training_ws.save_model(probe)
         if dev_loss >= best_dev_loss:
             lr /= 10
             optimizer = Adam(params, lr=lr)
             best_dev_loss = dev_loss
-    print(evaluate(test_loader, eval_uuas=True))
+    uuas = evaluate(test_loader, eval_uuas=True)
+    print(uuas)
+    training_ws.summary_writer.add_scalar('Test/UUAS', uuas)
 
 
 if __name__ == '__main__':
