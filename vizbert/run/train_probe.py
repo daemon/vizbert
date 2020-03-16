@@ -86,7 +86,7 @@ def main():
     params = list(filter(lambda x: x.requires_grad, probe.parameters()))
     lr = args.lr
     optimizer = Adam(params, lr=lr)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=0)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=0)
 
     data_ws = DataWorkspace(args.data_folder)
     if args.eval_only:
