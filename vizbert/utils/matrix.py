@@ -15,7 +15,7 @@ def sparse_vstack(sparse_matrices):
 def orth_compl(A: np.ndarray):
     Q = orth(A)
     compl_rank = Q.shape[0] - Q.shape[1]
-    qvecs = [x.reshape(x.shape[0]) for x in np.hsplit(Q, Q.shape[1])]
+    qvecs = list(iter(Q.T))
     new_vecs = []
     for _ in range(compl_rank):
         new_vec = np.random.uniform(-1, 1, Q.shape[0])
@@ -28,8 +28,14 @@ def orth_compl(A: np.ndarray):
     return Q, Qc
 
 
-def sample_subspace_noise(Q: np.ndarray, a: float, b: float):
-    vec = np.zeros(Q.shape[1])
-    for q in Q:
-        vec += (a + random.random() * (b - a)) * q
-    return vec
+def sample_subspace_noise(Q: np.ndarray, a: float, b: float, length: int = 1):
+    vecs = []
+    for _ in range(length):
+        vec = np.zeros(Q.shape[1])
+        for q in Q.T:
+            vec += (a + random.random() * (b - a)) * q
+        vecs.append(vec)
+    q_noise = np.stack(vecs)
+    if q_noise.shape[0] == 1:
+        q_noise = q_noise.squeeze(0)
+    return q_noise
