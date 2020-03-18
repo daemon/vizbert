@@ -3,7 +3,7 @@ from transformers import GPT2Model
 import torch
 import torch.nn as nn
 
-from vizbert.utils import orth_compl, sample_subspace_noise, batch_gs_project
+from vizbert.utils import orth_compl, sample_subspace_noise, batch_gs
 from .base import InjectionHook, ForwardWrapper
 
 
@@ -52,7 +52,7 @@ class ProbeDirectionRemovalModule(nn.Module):
             old_norms = hidden_states.norm(dim=2).unsqueeze(-1)
         for q in self.Q.split(1, 1):
             q = q.contiguous().view(-1)
-            hidden_states = batch_gs_project(q, hidden_states, strength=self.strength)
+            hidden_states = batch_gs(q, hidden_states, strength=self.strength)
         if self.normalize:
             norms = hidden_states.norm(dim=2).unsqueeze(-1)
             hidden_states = (hidden_states / norms) * old_norms

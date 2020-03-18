@@ -11,7 +11,8 @@ import numpy as np
 import torch
 import torch.utils.data as tud
 
-from vizbert.data import InnerProductProbe, ConllDistanceCollator, DataWorkspace, DistanceMatrixLoss, TrainingWorkspace
+from vizbert.data import ConllDistanceCollator, DataWorkspace, TrainingWorkspace
+from vizbert.model import InnerProductProbe, DistanceMatrixLoss
 from vizbert.utils import compute_mst, compute_uuas, compute_dspr
 
 

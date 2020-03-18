@@ -4,9 +4,16 @@ from scipy.linalg import orth, norm
 from scipy.sparse import vstack
 import numpy as np
 import torch
+import torch.nn as nn
 
 
-__all__ = ['sparse_vstack', 'gramschmidt_project', 'sample_subspace_noise', 'orth_compl', 'batch_gs_project']
+__all__ = ['sparse_vstack',
+           'gramschmidt_project',
+           'sample_subspace_noise',
+           'orth_compl',
+           'batch_gs',
+           'full_batch_gs',
+           'orth_tensor']
 
 
 def sparse_vstack(sparse_matrices):
@@ -20,12 +27,45 @@ def gramschmidt_project(q, x, strength=1):
     return x - strength * (np.dot(x, q) / np.dot(q, q)) * q
 
 
-def batch_gs_project(q: torch.Tensor, x: torch.Tensor, strength=1):
+def batch_gs(q: torch.Tensor, x: torch.Tensor, strength=1):
+    """Applies one step of the (modified) Gram-Schmidt process to a batch of sequence-level vectors.
+
+    :param q: the orthogonal vector.
+    :param x: the batch.
+    :param strength: scalar multiple of the projection.
+    :return: the batch subtracted by its projection onto the orthogonal vector.
+    """
     v = torch.einsum('i,bsi->bs', q, x)
     v = v / q.dot(q)
     q = q.unsqueeze(0).unsqueeze(0).expand_as(x)
     v = v.unsqueeze(-1).expand_as(q)
     return x - strength * v * q
+
+
+def full_batch_gs(Q: torch.Tensor, x: torch.Tensor):
+    for q in Q.t():
+        x = batch_gs(q, x)
+    return x
+
+
+def _gs1(u: torch.Tensor, v: torch.Tensor, eps: float = 1e-7):
+    """Applies one step of the (modified) Gram-Schmidt process to a vector.
+
+    :param u: the previous vector to project against.
+    :param v: the current vector to apply the transformation to.
+    :return: the result of one step of the process.
+    """
+    v = v - (u.dot(v) / u.dot(u)) * u
+    return v / (v.norm() + eps)
+
+
+def orth_tensor(A: torch.Tensor, eps: float = 1e-7):
+    hiddens = []
+    for v in A.t():
+        for hid in hiddens:
+            v = _gs1(hid, v)
+        hiddens.append(v / (v.norm() + eps))
+    return torch.stack(hiddens, 1)
 
 
 def orth_compl(A: np.ndarray):
