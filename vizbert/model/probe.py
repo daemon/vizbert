@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 
 
+__all__ = ['InnerProductProbe', 'DistanceMatrixLoss']
+
+
 class InnerProductProbe(nn.Module):
 
     def __init__(self, length: int, max_rank: int = None):

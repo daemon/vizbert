@@ -3,13 +3,16 @@ from transformers import GPT2Model
 import torch
 import torch.nn as nn
 
-from vizbert.utils import orth_compl, sample_subspace_noise
+from vizbert.utils import orth_compl, sample_subspace_noise, batch_gs_project
 from .base import InjectionHook, ForwardWrapper
+
+
+__all__ = ['ProbeSubspaceNoiseModule', 'Gpt2HiddenLayerInjectionHook', 'ProbeDirectionRemovalModule']
 
 
 class ProbeSubspaceNoiseModule(nn.Module):
 
-    def __init__(self, probe_weight: torch.Tensor, use_complement=False, a=0.1):
+    def __init__(self, probe_weight: torch.Tensor, use_complement=True, a=50):
         super().__init__()
         self.use_complement = use_complement
         self.a = a
@@ -23,23 +26,49 @@ class ProbeSubspaceNoiseModule(nn.Module):
         return torch.from_numpy(noise).to(hidden_states.device) + hidden_states
 
 
-class Gpt2NoiseInjectionHook(InjectionHook):
+class ProbeDirectionRemovalModule(nn.Module):
 
-    def __init__(self, probe_noise: ProbeSubspaceNoiseModule, layer_idx: int, last_only=True):
-        self.probe_noise = probe_noise
+    def __init__(self,
+                 probe_weight: torch.Tensor,
+                 use_complement=False,
+                 normalize=True,
+                 strength=1):
+        super().__init__()
+        self.use_complement = use_complement
+        if use_complement:
+            Q = orth_compl(probe_weight.cpu().numpy().T)[1]
+        else:
+            Q = orth(probe_weight.cpu().numpy().T)
+        Q = torch.from_numpy(Q)
+        self.register_buffer('Q', Q)
+        self.normalize = normalize
+        self.strength = strength
+        self.passthrough = False
+
+    def forward(self, hidden_states: torch.Tensor):
+        if self.passthrough:
+            return hidden_states
+        if self.normalize:
+            old_norms = hidden_states.norm(dim=2).unsqueeze(-1)
+        for q in self.Q.split(1, 1):
+            q = q.contiguous().view(-1)
+            hidden_states = batch_gs_project(q, hidden_states, strength=self.strength)
+        if self.normalize:
+            norms = hidden_states.norm(dim=2).unsqueeze(-1)
+            hidden_states = (hidden_states / norms) * old_norms
+        return hidden_states
+
+
+class Gpt2HiddenLayerInjectionHook(InjectionHook):
+
+    def __init__(self, module: nn.Module, layer_idx: int, last_only=True):
+        self.module = module
         self.last_only = last_only
         self.layer_idx = layer_idx
 
     def _routine(self, outputs):
-        hid = outputs[0][-1]
-        bsz = hid.size(0)
-        hlen = hid.size(2)
-        x1 = hid.size(1)
-        x3 = hid.size(3)
-        hid = hid.permute(0, 2, 1, 3).contiguous().view(bsz, hlen, -1)
-        hid = self.probe_noise(hid)
-        hid = hid.view(bsz, hlen, x1, x3).permute(0, 2, 1, 3).contiguous()
-        outputs[0][-1] = hid
+        hid = self.module(outputs[0])
+        outputs[0] = hid
         return outputs
 
     def do_inject(self, model: GPT2Model):

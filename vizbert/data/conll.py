@@ -10,6 +10,9 @@ import torch
 from vizbert.utils import compute_distance_matrix, merge_by_segmentation, compute_coloring
 
 
+__all__ = ['ConllDataset', 'ConllDistanceCollator', 'ConllTextCollator', 'TreeDistanceBatch', 'TextBatch']
+
+
 class ConllDataset(tud.Dataset):
 
     def __init__(self, examples: Sequence[TokenList], sort_by_length=False):

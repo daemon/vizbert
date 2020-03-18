@@ -3,6 +3,9 @@ from sklearn.decomposition import IncrementalPCA
 from .base import OutputTransform, OutputExtractor
 
 
+__all__ = ['Gpt2AttentionKeyValueExtractor', 'BertHiddenStateExtractor', 'Gpt2HiddenStateExtractor']
+
+
 class Gpt2PcaTransform(OutputTransform):
 
     def __init__(self, num_components, batch_size, pad_max_len=None):
@@ -13,17 +16,30 @@ class Gpt2PcaTransform(OutputTransform):
         pass
 
 
-class Gpt2HiddenStateExtractor(OutputExtractor):
+class Gpt2AttentionKeyValueExtractor(OutputExtractor):
 
-    def __init__(self, layer_idx: int, last_only=True):
+    def __init__(self, layer_idx: int, extract='key'):
         self.layer_idx = layer_idx
-        self.last_only = last_only
+        if extract == 'key':
+            self.extract_idx = 0
+        elif extract == 'value':
+            self.extract_idx = 1
+        else:
+            self.extract_idx = (0, 1)
 
     def __call__(self, output):
-        hidden = output[1][self.layer_idx]
-        if self.last_only:
-            hidden = hidden[-1]
+        hidden = output[1][self.layer_idx][self.extract_idx]
         return dict(hidden_state=hidden.permute(0, 2, 1, 3).contiguous().view(hidden.size(0), hidden.size(2), -1).cpu().detach())
+
+
+class Gpt2HiddenStateExtractor(OutputExtractor):
+
+    def __init__(self, layer_idx: int):
+        self.layer_idx = layer_idx
+
+    def __call__(self, output):
+        hidden = output[2][self.layer_idx]
+        return dict(hidden_state=hidden.cpu().detach())
 
 
 class BertHiddenStateExtractor(OutputExtractor):

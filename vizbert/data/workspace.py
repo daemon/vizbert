@@ -8,6 +8,9 @@ import torch
 from vizbert.data import ConllDataset
 
 
+__all__ = ['DataWorkspace', 'TrainingWorkspace']
+
+
 @dataclass
 class DataWorkspace(object):
     folder: Path
