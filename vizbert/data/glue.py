@@ -52,14 +52,10 @@ class GlueCollator(object):
             if LABEL_COLUMN in ex:
                 labels.append(ex[LABEL_COLUMN])
         max_len = max(len(x) for x in token_ids)
-        masks = [x.extend([0] * (max_len - len(x))) for x in masks]
-        segment_ids = [x.extend([0] * (max_len - len(x))) for x in segment_ids]
-        token_ids = [x.extend([0] * (max_len - len(x))) for x in token_ids]
-        return LabeledTextBatch(torch.tensor(token_ids),
-                                torch.tensor(masks),
-                                raw_text,
-                                torch.tensor(segment_ids),
-                                labels=torch.tensor(labels) if labels else None)
+        masks = torch.tensor([x + ([0] * (max_len - len(x))) for x in masks])
+        segment_ids = torch.tensor([x + ([0] * (max_len - len(x))) for x in segment_ids])
+        token_ids = torch.tensor([x + ([0] * (max_len - len(x))) for x in token_ids])
+        return LabeledTextBatch(token_ids, masks, raw_text, segment_ids, labels=torch.tensor(labels) if labels else None)
 
 
 class DataFrameDataset(tud.Dataset):
@@ -73,7 +69,7 @@ class DataFrameDataset(tud.Dataset):
         return len(self.dataframe)
 
     def __getitem__(self, idx):
-        return self.dataframe[idx]
+        return self.dataframe.loc[idx]
 
 
 @dataclass

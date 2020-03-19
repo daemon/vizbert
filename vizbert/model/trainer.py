@@ -68,7 +68,7 @@ class ModelTrainer(object):
         all_losses = {k: v / tot_len for k, v in all_losses.items()}
         return all_losses
 
-    def train(self):
+    def train(self, test=True):
         for epoch_idx in trange(self.num_epochs, position=0):
             pbar = tqdm(self.train_loader, total=len(self.train_loader), position=1)
             for batch in pbar:
@@ -84,6 +84,7 @@ class ModelTrainer(object):
             for loss_name, value in dev_losses.items():
                 self.workspace.summary_writer.add_scalar(f'Dev/{loss_name.capitalize()}', value, epoch_idx)
             self.workspace.save_model(self.model)
-        test_losses = self.evaluate(self.test_loader)
-        for loss_name, value in test_losses.items():
-            self.workspace.summary_writer.add_scalar(f'Test/{loss_name.capitalize()}', value)
+        if test:
+            test_losses = self.evaluate(self.test_loader)
+            for loss_name, value in test_losses.items():
+                self.workspace.summary_writer.add_scalar(f'Test/{loss_name.capitalize()}', value)
