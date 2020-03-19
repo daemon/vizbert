@@ -58,7 +58,7 @@ class EntropyLoss(nn.Module):
 
 class ProjectionPursuitProbe(nn.Module):
 
-    def __init__(self, num_features, rank=None, normalize=False):
+    def __init__(self, num_features, rank=None, normalize=False, orthogonalize=False):
         super().__init__()
         self.num_features = num_features
         if rank is None:
@@ -66,6 +66,7 @@ class ProjectionPursuitProbe(nn.Module):
         self.rank = rank
         self.normalize = normalize
         self.probe = nn.Parameter(torch.Tensor(num_features, rank).uniform_(-0.05, 0.05), requires_grad=True)
+        self.orthogonalize = orthogonalize
 
     def orth_probe(self):
         return orth_tensor(self.probe)
@@ -73,7 +74,7 @@ class ProjectionPursuitProbe(nn.Module):
     def forward(self, hidden_states: torch.Tensor):
         if self.normalize:
             old_norms = hidden_states.norm(dim=2).unsqueeze(-1)
-        hidden_states = full_batch_gs(self.orth_probe(), hidden_states)
+        hidden_states = full_batch_gs(self.orth_probe() if self.orthogonalize else self.probe, hidden_states)
         if self.normalize:
             norms = hidden_states.norm(dim=2).unsqueeze(-1)
             hidden_states = (hidden_states / norms) * old_norms
