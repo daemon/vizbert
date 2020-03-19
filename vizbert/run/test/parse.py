@@ -1,7 +1,7 @@
 from pathlib import Path
 import argparse
 
-from vizbert.data import DataWorkspace
+from vizbert.data import ConllWorkspace
 from vizbert.utils import compute_mst, compute_uuas, compute_distance_matrix
 
 
@@ -12,7 +12,7 @@ def main():
     parser.add_argument('--layer-idx', type=int, default=5)
     args = parser.parse_args()
 
-    workspace = DataWorkspace(args.folder)
+    workspace = ConllWorkspace(args.folder)
     dev_ds = workspace.load_attached_hidden_state_dataset(workspace.dev_name, args.layer_idx)
     tokenlist, batch = dev_ds[8]
     hid = batch['hidden_state']

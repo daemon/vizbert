@@ -4,7 +4,7 @@ import argparse
 from transformers import AutoTokenizer, AutoModel, AutoConfig
 import torch.utils.data as tud
 
-from vizbert.data import ConllTextCollator, DataWorkspace
+from vizbert.data import ConllTextCollator, ConllWorkspace
 from vizbert.extract import ModelStateExtractor, Gpt2HiddenStateExtractor, TransformerInputFeeder, \
     BufferedFileOutputSerializer, BertHiddenStateExtractor, Gpt2AttentionKeyValueExtractor
 
@@ -27,7 +27,7 @@ def main():
     config.output_hidden_states = True
     model = AutoModel.from_pretrained(args.model, config=config)
 
-    workspace = DataWorkspace(args.folder)
+    workspace = ConllWorkspace(args.folder)
     train_ds, dev_ds, test_ds = workspace.load_conll_splits()
     collator = ConllTextCollator(tokenizer)
 

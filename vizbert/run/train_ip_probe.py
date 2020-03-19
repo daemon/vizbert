@@ -11,7 +11,7 @@ import numpy as np
 import torch
 import torch.utils.data as tud
 
-from vizbert.data import ConllDistanceCollator, DataWorkspace, TrainingWorkspace
+from vizbert.data import ConllDistanceCollator, ConllWorkspace, TrainingWorkspace
 from vizbert.model import InnerProductProbe, DistanceMatrixLoss
 from vizbert.utils import compute_mst, compute_uuas, compute_dspr
 
@@ -89,7 +89,7 @@ def main():
     optimizer = Adam(params, lr=lr)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=0)
 
-    data_ws = DataWorkspace(args.data_folder)
+    data_ws = ConllWorkspace(args.data_folder)
     if args.eval_only:
         test_ds, = data_ws.load_conll_splits(attach_hidden=True, layer_idx=args.layer_idx, splits=(data_ws.test_name,))
         test_loader = tud.DataLoader(test_ds, batch_size=args.batch_size, pin_memory=True, collate_fn=collator, num_workers=args.num_workers)
