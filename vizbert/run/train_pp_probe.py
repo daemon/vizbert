@@ -9,7 +9,7 @@ from transformers import AutoTokenizer, BertForMaskedLM
 import torch.utils.data as tud
 import torch
 
-from vizbert.data import DataWorkspace, ConllTextCollator
+from vizbert.data import DataWorkspace, ConllTextCollator, TrainingWorkspace
 from vizbert.inject import ModelInjector, BertHiddenLayerInjectionHook
 from vizbert.model import ProjectionPursuitProbe, EntropyLoss
 
@@ -32,6 +32,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data-folder', '-df', type=Path, required=True)
     parser.add_argument('--layer-idx', '-l', type=int, required=True)
+    parser.add_argument('--workspace', '-w', type=Path, required=True)
     parser.add_argument('--num-features', type=int, default=768)
     parser.add_argument('--probe-rank', type=int, default=2)
     parser.add_argument('--model', default='bert-base-cased', type=str)
@@ -39,7 +40,7 @@ def main():
     parser.add_argument('--device', type=torch.device, default='cuda:0')
     parser.add_argument('--batch-size', '-bsz', type=int, default=16)
     parser.add_argument('--lr', type=float, default=5e-4)
-    parser.add_argument('--num-epochs', type=int, default=10)
+    parser.add_argument('--num-epochs', type=int, default=1)
     args = parser.parse_args()
 
     if args.num_workers is None:
@@ -49,6 +50,7 @@ def main():
     probe = ProjectionPursuitProbe(args.num_features, rank=args.probe_rank).to(args.device)
     hook = BertHiddenLayerInjectionHook(probe, args.layer_idx - 1)
     injector = ModelInjector(model.bert, hooks=[hook])
+    workspace = TrainingWorkspace(args.workspace)
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     collator = ConllTextCollator(tokenizer)
@@ -64,7 +66,7 @@ def main():
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=0)
 
     with injector:
-        for _ in trange(args.num_epochs, position=0):
+        for epoch_idx in trange(args.num_epochs, position=0):
             pbar = tqdm(train_loader, total=len(train_loader), position=1)
             for batch in pbar:
                 token_ids = batch.token_ids.to(args.device)
@@ -76,7 +78,11 @@ def main():
                 pbar.set_postfix(dict(H=f'{loss.item():.3}'))
             dev_loss = evaluate(dev_loader)
             scheduler.step(dev_loss)
-    print(evaluate(test_loader))
+            workspace.summary_writer.add_scalar('Dev/Entropy', -dev_loss, epoch_idx)
+            workspace.save_model(probe)
+    test_entropy = -evaluate(test_loader)
+    workspace.summary_writer.add_scalar('Test/Entropy', test_entropy, epoch_idx)
+    print(test_entropy)
 
 
 if __name__ == '__main__':
