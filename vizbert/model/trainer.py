@@ -58,12 +58,13 @@ class ModelTrainer(object):
             for batch in pbar:
                 ret = cb(self, batch)
                 loss = ret[LOSS_KEY]
+                loss_size = ret[LOSS_SIZE_KEY]
                 tot_loss += loss.item() * ret[LOSS_SIZE_KEY]
-                tot_len += ret[LOSS_SIZE_KEY]
+                tot_len += loss_size
                 del ret[LOSS_SIZE_KEY]
                 pbar.set_postfix(dict(loss=f'{tot_loss / tot_len:.3}'))
                 for k, v in ret.items():
-                    all_losses[k] += v.item() * ret[LOSS_SIZE_KEY]
+                    all_losses[k] += v.item() * loss_size
         all_losses = {k: v / tot_len for k, v in all_losses.items()}
         return all_losses
 
