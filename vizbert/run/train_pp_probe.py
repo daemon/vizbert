@@ -47,8 +47,8 @@ def main():
 
     model = BertForMaskedLM.from_pretrained(args.model).to(args.device)
     probe = ProjectionPursuitProbe(args.num_features, rank=args.probe_rank).to(args.device)
-    extractor = BertHiddenLayerInjectionHook(probe, args.layer_idx - 1)
-    injector = ModelInjector(model.bert, hooks=[extractor])
+    hook = BertHiddenLayerInjectionHook(probe, args.layer_idx - 1)
+    injector = ModelInjector(model.bert, hooks=[hook])
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     collator = ConllTextCollator(tokenizer)
@@ -72,6 +72,7 @@ def main():
                 loss = criterion(scores)
                 optimizer.zero_grad()
                 loss.backward()
+                optimizer.step()
                 pbar.set_postfix(dict(H=f'{loss.item():.3}'))
             dev_loss = evaluate(dev_loader)
             scheduler.step(dev_loss)
