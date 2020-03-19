@@ -1,5 +1,5 @@
 from scipy.linalg import orth
-from transformers import GPT2Model
+from transformers import GPT2Model, BertModel
 import torch
 import torch.nn as nn
 
@@ -7,7 +7,10 @@ from vizbert.utils import orth_compl, sample_subspace_noise, batch_gs
 from .base import InjectionHook, ForwardWrapper
 
 
-__all__ = ['ProbeSubspaceNoiseModule', 'Gpt2HiddenLayerInjectionHook', 'ProbeDirectionRemovalModule']
+__all__ = ['ProbeSubspaceNoiseModule',
+           'Gpt2HiddenLayerInjectionHook',
+           'ProbeDirectionRemovalModule',
+           'BertHiddenLayerInjectionHook']
 
 
 class ProbeSubspaceNoiseModule(nn.Module):
@@ -59,11 +62,33 @@ class ProbeDirectionRemovalModule(nn.Module):
         return hidden_states
 
 
+class BertHiddenLayerInjectionHook(InjectionHook):
+
+    def __init__(self, module: nn.Module, layer_idx: int):
+        self.module = module
+        self.layer_idx = layer_idx
+
+    def _routine(self, outputs):
+        hid = self.module(outputs[0])
+        outputs = list(outputs)
+        outputs[0] = hid
+        return tuple(outputs)
+
+    def do_inject(self, model: BertModel):
+        model.encoder.layer[self.layer_idx] = ForwardWrapper(model.encoder.layer[self.layer_idx], self._routine)
+
+    def do_eject(self, model: BertModel):
+        model.encoder.layer[self.layer_idx] = model.encoder.layer[self.layer_idx].module
+
+    @property
+    def name(self):
+        return f'bert-layer-inject-{self.layer_idx}'
+
+
 class Gpt2HiddenLayerInjectionHook(InjectionHook):
 
-    def __init__(self, module: nn.Module, layer_idx: int, last_only=True):
+    def __init__(self, module: nn.Module, layer_idx: int):
         self.module = module
-        self.last_only = last_only
         self.layer_idx = layer_idx
 
     def _routine(self, outputs):
@@ -79,4 +104,4 @@ class Gpt2HiddenLayerInjectionHook(InjectionHook):
 
     @property
     def name(self):
-        return 'gpt2-probe-noise'
+        return f'gpt2-layer-inject-{self.layer_idx}'

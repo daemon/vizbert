@@ -1,10 +1,11 @@
+from torch.distributions import Categorical
 import torch
 import torch.nn as nn
 
 from vizbert.utils import orth_tensor, full_batch_gs
 
 
-__all__ = ['InnerProductProbe', 'DistanceMatrixLoss', 'ProjectionPursuitProbe']
+__all__ = ['InnerProductProbe', 'DistanceMatrixLoss', 'ProjectionPursuitProbe', 'EntropyLoss']
 
 
 class InnerProductProbe(nn.Module):
@@ -34,6 +35,25 @@ class DistanceMatrixLoss(nn.Module):
         sq_lengths = mask.view(mask.size(0), -1).sum(1)
         l1_diff = (mask * torch.abs(scores - labels)).view(labels.size(0), -1).sum(1)
         return torch.mean(l1_diff / sq_lengths)
+
+
+class EntropyLoss(nn.Module):
+
+    def __init__(self, mode='max', reduction='mean'):
+        super().__init__()
+        self.mode = mode
+        self.reduction = reduction
+
+    def forward(self, scores: torch.Tensor, attention_mask=None):
+        if attention_mask is None:
+            attention_mask = torch.ones_like(scores).to(scores.device)
+        attention_mask = (1 - attention_mask) * -10000
+        entropy = Categorical(logits=(scores + attention_mask)).entropy()
+        if self.mode == 'max':
+            entropy = -entropy
+        if self.reduction == 'mean':
+            entropy = entropy.mean(1).mean(0)
+        return entropy
 
 
 class ProjectionPursuitProbe(nn.Module):
