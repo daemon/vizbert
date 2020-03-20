@@ -62,7 +62,7 @@ class EntropyLoss(nn.Module):
 
 class ProjectionPursuitProbe(nn.Module):
 
-    def __init__(self, num_features, rank=None, normalize=True, orthogonalize=False, mask_first=False):
+    def __init__(self, num_features, rank=None, normalize=False, orthogonalize=True, mask_first=False):
         super().__init__()
         self.num_features = num_features
         if rank is None:

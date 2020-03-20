@@ -43,6 +43,10 @@ class TrainingWorkspace(object):
     folder: Path
     model_name = 'model.pt'
 
+    @property
+    def model_path(self):
+        return self.folder / self.model_name
+
     def __post_init__(self):
         self.log_path = self.folder / 'logs'
         try:

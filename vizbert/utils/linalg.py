@@ -13,7 +13,8 @@ __all__ = ['sparse_vstack',
            'orth_compl',
            'batch_gs',
            'full_batch_gs',
-           'orth_tensor']
+           'orth_tensor',
+           'batch_gs_coeffs']
 
 
 def sparse_vstack(sparse_matrices):
@@ -25,6 +26,15 @@ def sparse_vstack(sparse_matrices):
 
 def gramschmidt_project(q, x, strength=1):
     return x - strength * (np.dot(x, q) / np.dot(q, q)) * q
+
+
+def batch_gs_coeffs(A, x):
+    coeffs = []
+    for vec in A.t():
+        coeff = torch.einsum('bsn,n->bs', x, vec) / vec.dot(vec)
+        coeffs.append(coeff)
+        x = x - (coeff.unsqueeze(-1) * vec.unsqueeze(0).unsqueeze(0))
+    return torch.stack(coeffs, 2)
 
 
 def batch_gs(q: torch.Tensor, x: torch.Tensor, strength=1):

@@ -10,7 +10,8 @@ from .base import InjectionHook, ForwardWrapper
 __all__ = ['ProbeSubspaceNoiseModule',
            'Gpt2HiddenLayerInjectionHook',
            'ProbeDirectionRemovalModule',
-           'BertHiddenLayerInjectionHook']
+           'BertHiddenLayerInjectionHook',
+           'ProbeReportingModule']
 
 
 class ProbeSubspaceNoiseModule(nn.Module):
@@ -59,6 +60,17 @@ class ProbeDirectionRemovalModule(nn.Module):
         if self.normalize:
             norms = hidden_states.norm(dim=2).unsqueeze(-1)
             hidden_states = (hidden_states / norms) * old_norms
+        return hidden_states
+
+
+class ProbeReportingModule(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.buffer = None
+
+    def forward(self, hidden_states):
+        self.buffer = hidden_states
         return hidden_states
 
 

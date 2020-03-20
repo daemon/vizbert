@@ -30,18 +30,10 @@ class InjectionHook(object):
         raise NotImplementedError
 
     def inject(self, model: nn.Module):
-        if hasattr(model, '_injection_hooks') and self.name in model._injection_hooks:
-            raise AlreadyInjectedError
         self.do_inject(model)
-        if not hasattr(model, '_injection_hooks'):
-            setattr(model, '_injection_hooks', set())
-        model._injection_hooks.add(self.name)
 
     def eject(self, model: nn.Module):
-        if hasattr(model, '_injection_hooks') and not self.name in model._injection_hooks:
-            raise NotInjectedError
         self.do_eject(model)
-        model._injection_hooks.remove(self.name)
 
     @property
     def name(self):
@@ -61,11 +53,18 @@ class ModelInjector(object):
     def __init__(self, model: nn.Module, hooks: Sequence[InjectionHook]):
         self.model = model
         self.hooks = hooks
+        self.injected = False
 
     def __enter__(self, *args, **kwargs):
+        if self.injected:
+            raise AlreadyInjectedError
+        self.injected = True
         for hook in self.hooks:
             hook.inject(self.model)
 
     def __exit__(self, *args):
+        if not self.injected:
+            raise NotInjectedError
+        self.injected = False
         for hook in self.hooks[::-1]:
             hook.eject(self.model)
