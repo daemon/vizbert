@@ -51,6 +51,7 @@ def main():
     probe = ProjectionPursuitProbe(args.num_features,
                                    rank=args.probe_rank,
                                    mask_first=args.dataset_type == 'glue').to(args.device)
+    # probe.probe.data = torch.load('pca.pt')['b'].t().to(args.device)
     hook = BertHiddenLayerInjectionHook(probe, args.layer_idx - 1)
     injector = ModelInjector(model.bert, hooks=[hook])
     workspace = TrainingWorkspace(args.workspace)

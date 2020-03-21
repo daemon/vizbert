@@ -61,3 +61,5 @@ class OptionEnum(enum.Enum):
     NUM_EPOCHS = opt('--num-epochs', type=int, default=1)
     BATCH_SIZE = opt('--batch-size', '-bsz', type=int, default=16)
     TASK = opt('--task', type=str, required=True)
+    LOAD_WEIGHTS = opt('--load-weights', action='store_true')
+    EVAL_ONLY = opt('--eval-only', action='store_true')

@@ -1,5 +1,6 @@
 from transformers import AutoConfig, AutoTokenizer, AutoModelForSequenceClassification, AdamW, get_linear_schedule_with_warmup
 import torch.utils.data as tud
+import torch
 
 from .args import ArgumentParserBuilder, OptionEnum, opt
 from vizbert.data import DATA_WORKSPACE_CLASSES, ClassificationCollator, TrainingWorkspace, LabeledTextBatch
@@ -7,7 +8,7 @@ from vizbert.model import ModelTrainer, LOSS_SIZE_KEY, LOSS_KEY, ClassificationL
 
 
 def main():
-    def feeder(_, batch: LabeledTextBatch):
+    def feeder(trainer, batch: LabeledTextBatch):
         token_ids = batch.token_ids.to(args.device)
         scores = model(token_ids,
                        attention_mask=batch.attention_mask.to(args.device),
@@ -17,11 +18,17 @@ def main():
         model.zero_grad()
         ret = {LOSS_KEY: loss,
                LOSS_SIZE_KEY: token_ids.size(0)}
+        if trainer.training:
+            scheduler.step()
         if batch.multilabel:
-            ret['recall'] = (scores[labels == 1] > 0).float().sum(-1) / labels.float().sum(-1).float()
-            ret['precision'] = ((scores > 0).float() == labels.float()).sum(-1).float()
-            ret['f1'] = (2 * (ret['recall'] * ret['precision']) / (ret['precision'] + ret['recall'])).mean()
+            ret['recall'] = ((scores > 0) & (labels > 0)).float().sum(-1) / labels.float().sum(-1)
+            num_nnz_scores = (scores > 0).float().sum(-1)
+            num_nnz_scores[num_nnz_scores == 0] = 1
+            ret['precision'] = ((scores > 0) & (labels > 0)).float().sum(-1) / num_nnz_scores
+            ret['f1'] = (2 * (ret['recall'] * ret['precision']) / (ret['precision'] + ret['recall']))
+            ret['f1'][torch.isnan(ret['f1'])] = 0
             ret['recall'] = ret['recall'].mean()
+            ret['f1'] = ret['f1'].mean()
             ret['precision'] = ret['precision'].mean()
         else:
             ret['accuracy'] = (scores.max(-1)[1] == labels).float().mean()
@@ -37,6 +44,8 @@ def main():
                  OptionEnum.NUM_WORKERS,
                  OptionEnum.MODEL.default('bert-base-uncased'),
                  OptionEnum.DEVICE,
+                 OptionEnum.LOAD_WEIGHTS,
+                 OptionEnum.EVAL_ONLY,
                  opt('--max-seq-len', '-msl', type=int, default=128),
                  opt('--num-warmup-steps', '-nws', type=int, default=0))
     args = apb.parser.parse_args()
@@ -58,6 +67,9 @@ def main():
     model = AutoModelForSequenceClassification.from_pretrained(args.model, config=config)
     model.to(args.device)
 
+    if args.load_weights:
+        tws.load_model(model)
+
     # Prepare optimizer and schedule (linear warmup and decay)
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
@@ -78,7 +90,11 @@ def main():
                            args.num_epochs,
                            scheduler=scheduler,
                            train_feed_loss_callback=feeder)
-    trainer.train()
+    if args.eval_only:
+        trainer.evaluate(trainer.dev_loader, header='Dev')
+        trainer.evaluate(trainer.test_loader, header='Test')
+    else:
+        trainer.train()
 
 
 if __name__ == '__main__':

@@ -45,6 +45,7 @@ class ClassificationLoss(nn.Module):
     def __init__(self, multilabel=False):
         super().__init__()
         self.criterion = nn.BCEWithLogitsLoss() if multilabel else nn.CrossEntropyLoss()
+        self.multilabel = multilabel
 
     def forward(self, scores, labels):
         return self.criterion(scores, labels)

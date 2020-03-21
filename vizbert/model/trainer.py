@@ -35,6 +35,7 @@ class ModelTrainer(object):
             self.dev_feed_loss_callback = self.train_feed_loss_callback
         if self.test_feed_loss_callback is None:
             self.test_feed_loss_callback = self.train_feed_loss_callback
+        self.training = True
 
     @property
     def train_loader(self):
@@ -48,7 +49,8 @@ class ModelTrainer(object):
     def test_loader(self):
         return self.loaders[2]
 
-    def evaluate(self, loader):
+    def evaluate(self, loader, header='Evaluate'):
+        self.training = False
         all_losses = defaultdict(float)
         tot_loss = 0
         tot_len = 0
@@ -66,10 +68,13 @@ class ModelTrainer(object):
                 for k, v in ret.items():
                     all_losses[k] += v.item() * loss_size
         all_losses = {k: v / tot_len for k, v in all_losses.items()}
+        for loss_name, value in all_losses.items():
+            tqdm.write(f'{header},{loss_name.capitalize()},{value:.5}')
         return all_losses
 
     def train(self, test=True):
         for epoch_idx in trange(self.num_epochs, position=0):
+            self.training = True
             pbar = tqdm(self.train_loader, total=len(self.train_loader), position=1)
             for train_idx, batch in enumerate(pbar):
                 loss = self.train_feed_loss_callback(self, batch)[LOSS_KEY]
@@ -78,15 +83,13 @@ class ModelTrainer(object):
                 loss.backward()
                 self.optimizer.step()
                 pbar.set_postfix(dict(loss=f'{loss.item():.3}'))
-            dev_losses = self.evaluate(self.dev_loader)
+            dev_losses = self.evaluate(self.dev_loader, header=epoch_idx + 1)
             if self.scheduler is not None:
                 self.scheduler.step(dev_losses[LOSS_KEY])
             for loss_name, value in dev_losses.items():
-                tqdm.write(f'{epoch_idx + 1},{loss_name.capitalize()},{value:.5}')
                 self.workspace.summary_writer.add_scalar(f'Dev/{loss_name.capitalize()}', value, epoch_idx)
             self.workspace.save_model(self.model)
         if test:
-            test_losses = self.evaluate(self.test_loader)
+            test_losses = self.evaluate(self.test_loader, header='Test')
             for loss_name, value in test_losses.items():
-                tqdm.write(f'Test,{loss_name.capitalize()},{value:.5}')
                 self.workspace.summary_writer.add_scalar(f'Test/{loss_name.capitalize()}', value)

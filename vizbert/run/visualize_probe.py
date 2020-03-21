@@ -1,7 +1,7 @@
 import multiprocessing as mp
 
 from matplotlib import pyplot as plt
-from transformers import AutoTokenizer, BertForMaskedLM, BertForSequenceClassification, BertTokenizer
+from transformers import AutoTokenizer, BertForMaskedLM, BertForSequenceClassification
 import torch
 import torch.utils.data as tud
 
@@ -70,7 +70,7 @@ def main():
                 plt.annotate(token, pair, size='x-small')
             if idx == 10:
                 break
-    plt.savefig('test.png')
+    plt.show()
 
 
 if __name__ == '__main__':
