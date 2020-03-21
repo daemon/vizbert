@@ -185,7 +185,7 @@ def main():
 
     parser.add_argument('--seed', type=int, default=42, help='random seed for initialization')
     parser.add_argument('--no-cuda', action='store_true', help='Avoid using CUDA when available')
-    parser.add_argument('--num-return-sequences', '-nrs', type=int, default=5, help='The number of samples to generate.')
+    parser.add_argument('--num-return-sequences', '-nrs', type=int, default=5, help='The number of samples to lm.')
     parser.add_argument('--inject', type=str, nargs='+', default=['noise', 'remove'])
     parser.add_argument('--probe-path', type=str)
     parser.add_argument('--layer-idx', type=int)

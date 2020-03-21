@@ -4,7 +4,6 @@ from scipy.linalg import orth, norm
 from scipy.sparse import vstack
 import numpy as np
 import torch
-import torch.nn as nn
 
 
 __all__ = ['sparse_vstack',

@@ -1,3 +1,4 @@
+from functools import lru_cache
 from itertools import chain
 from typing import Sequence, Union
 
@@ -5,11 +6,16 @@ from conllu.models import TokenList, TokenTree
 from scipy.stats import spearmanr
 import torch
 import numpy as np
+import stanza
 
 from .id_wrap import id_wrap
 
 
 _SF_PUNCT = {"''", ',', '.', ':', '``', '-LRB-', '-RRB-'}
+try:
+    stanza.download('en')
+except:
+    pass
 
 
 def compute_uuas(pred_tree: TokenTree,
@@ -160,3 +166,11 @@ def compute_coloring(tokenizer, sentence) -> Sequence[int]:
         coloring.extend([last_color] * len(tokenizer.tokenize(f' {word}')))
         last_color = 1 - last_color
     return coloring
+
+
+@lru_cache(maxsize=None)
+def quick_nlp(lang: str = 'en', name: str = None, **kwargs):
+    if name is None:
+        return stanza.Pipeline(lang, **kwargs)
+    if name == 'pos':
+        return stanza.Pipeline(lang, processors='tokenize,pos', **kwargs)

@@ -50,21 +50,35 @@ class NotInjectedError(Exception):
 
 class ModelInjector(object):
 
-    def __init__(self, model: nn.Module, hooks: Sequence[InjectionHook]):
+    def __init__(self, model: nn.Module, hooks: Sequence[InjectionHook], uninject=False):
         self.model = model
         self.hooks = hooks
-        self.injected = False
+        self.injected = uninject
+        self.do_uninject = uninject
+
+    def uninject(self):
+        return ModelInjector(self.model, self.hooks, uninject=True)
 
     def __enter__(self, *args, **kwargs):
-        if self.injected:
+        if self.injected and not self.do_uninject:
             raise AlreadyInjectedError
-        self.injected = True
+        if not self.injected and self.do_uninject:
+            raise NotInjectedError
+        self.injected = not self.do_uninject
         for hook in self.hooks:
-            hook.inject(self.model)
+            if self.do_uninject:
+                hook.eject(self.model)
+            else:
+                hook.inject(self.model)
 
     def __exit__(self, *args):
-        if not self.injected:
+        if not self.injected and not self.do_uninject:
             raise NotInjectedError
-        self.injected = False
+        if self.injected and self.do_uninject:
+            raise AlreadyInjectedError
+        self.injected = not self.injected
         for hook in self.hooks[::-1]:
-            hook.eject(self.model)
+            if self.do_uninject:
+                hook.inject(self.model)
+            else:
+                hook.eject(self.model)
