@@ -78,8 +78,6 @@ class ModelTrainer(object):
                 loss.backward()
                 self.optimizer.step()
                 pbar.set_postfix(dict(loss=f'{loss.item():.3}'))
-                if train_idx == 5:
-                    break
             dev_losses = self.evaluate(self.dev_loader)
             if self.scheduler is not None:
                 self.scheduler.step(dev_losses[LOSS_KEY])
