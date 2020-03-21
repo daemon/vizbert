@@ -1,11 +1,10 @@
-from torch.distributions import Categorical
 import torch
 import torch.nn as nn
 
 from vizbert.utils import orth_tensor, full_batch_gs
 
 
-__all__ = ['InnerProductProbe', 'DistanceMatrixLoss', 'ProjectionPursuitProbe', 'EntropyLoss']
+__all__ = ['InnerProductProbe', 'ProjectionPursuitProbe']
 
 
 class InnerProductProbe(nn.Module):
@@ -15,7 +14,7 @@ class InnerProductProbe(nn.Module):
         self.length = length
         if max_rank is None:
             max_rank = length
-        self.b = nn.Parameter(torch.Tensor(max_rank, length).uniform_(-0.05, 0.05), requires_grad=True)
+        self.b = nn.Parameter(torch.empty(max_rank, length, dtype=torch.float32).uniform_(-0.05, 0.05), requires_grad=True)
 
     def forward(self, x):
         seq_len = x.size(1)
@@ -24,40 +23,6 @@ class InnerProductProbe(nn.Module):
         y = x.clone().permute(0, 2, 1, 3)
         z = x - y
         return torch.einsum('bijg,bijg->bij', z, z)
-
-
-class DistanceMatrixLoss(nn.Module):
-
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, scores, labels, mask):
-        sq_lengths = mask.view(mask.size(0), -1).sum(1)
-        l1_diff = (mask * torch.abs(scores - labels)).view(labels.size(0), -1).sum(1)
-        return torch.mean(l1_diff / sq_lengths)
-
-
-class EntropyLoss(nn.Module):
-
-    def __init__(self, mode='max', reduction='mean'):
-        super().__init__()
-        self.mode = mode
-        self.reduction = reduction
-
-    def forward(self, scores: torch.Tensor, *args, attention_mask=None):
-        if attention_mask is None:
-            attention_mask = torch.ones_like(scores).to(scores.device)
-        if scores.dim() > 1:
-            attention_mask = (1 - attention_mask) * -10000
-            scores = scores + attention_mask
-        entropy = Categorical(logits=scores).entropy()
-        if self.mode == 'max':
-            entropy = -entropy
-        if self.reduction == 'mean':
-            while entropy.dim() > 1:
-                entropy = entropy.mean(entropy.dim() - 2)
-            entropy = entropy.mean()
-        return entropy
 
 
 class ProjectionPursuitProbe(nn.Module):
@@ -70,7 +35,7 @@ class ProjectionPursuitProbe(nn.Module):
         self.rank = rank
         self.normalize = normalize
         self.mask_first = mask_first
-        self.probe = nn.Parameter(torch.Tensor(num_features, rank).uniform_(-0.05, 0.05), requires_grad=True)
+        self.probe = nn.Parameter(torch.empty(num_features, rank, dtype=torch.float32).uniform_(-0.05, 0.05), requires_grad=True)
         self.orthogonalize = orthogonalize
 
     def orth_probe(self):

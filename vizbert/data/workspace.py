@@ -5,10 +5,11 @@ import shutil
 from torch.utils.tensorboard import SummaryWriter
 import torch
 
+from .classification import Sst2Workspace, ReutersWorkspace
 from vizbert.data import ConllDataset
 
 
-__all__ = ['ConllWorkspace', 'TrainingWorkspace']
+__all__ = ['ConllWorkspace', 'TrainingWorkspace', 'DATA_WORKSPACE_CLASSES']
 
 
 @dataclass
@@ -30,7 +31,7 @@ class ConllWorkspace(object):
         ds.attach('hidden_state', hid_joined)
         return ds
 
-    def load_conll_splits(self, attach_hidden=False, layer_idx=None, splits=None):
+    def load_splits(self, attach_hidden=False, layer_idx=None, splits=None):
         if splits is None:
             splits = (self.train_name, self.dev_name, self.test_name)
         if not attach_hidden:
@@ -64,3 +65,6 @@ class TrainingWorkspace(object):
 
     def load_model(self, model: torch.nn.Module):
         model.load_state_dict(torch.load(self.folder / self.model_name, lambda s, l: s))
+
+
+DATA_WORKSPACE_CLASSES = dict(conll=ConllWorkspace, reuters=ReutersWorkspace, sst2=Sst2Workspace)

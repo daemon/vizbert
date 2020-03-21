@@ -12,10 +12,6 @@ from .id_wrap import id_wrap
 
 
 _SF_PUNCT = {"''", ',', '.', ':', '``', '-LRB-', '-RRB-'}
-try:
-    stanza.download('en')
-except:
-    pass
 
 
 def compute_uuas(pred_tree: TokenTree,
@@ -169,7 +165,16 @@ def compute_coloring(tokenizer, sentence) -> Sequence[int]:
 
 
 @lru_cache(maxsize=None)
+def lazy_nlp_init(lang):
+    try:
+        stanza.download('en')
+    except:
+        pass
+
+
+@lru_cache(maxsize=None)
 def quick_nlp(lang: str = 'en', name: str = None, **kwargs):
+    lazy_nlp_init(lang)
     if name is None:
         return stanza.Pipeline(lang, **kwargs)
     if name == 'pos':

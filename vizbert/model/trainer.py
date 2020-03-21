@@ -71,20 +71,24 @@ class ModelTrainer(object):
     def train(self, test=True):
         for epoch_idx in trange(self.num_epochs, position=0):
             pbar = tqdm(self.train_loader, total=len(self.train_loader), position=1)
-            for batch in pbar:
+            for train_idx, batch in enumerate(pbar):
                 loss = self.train_feed_loss_callback(self, batch)[LOSS_KEY]
                 self.model.zero_grad()
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
                 pbar.set_postfix(dict(loss=f'{loss.item():.3}'))
+                if train_idx == 5:
+                    break
             dev_losses = self.evaluate(self.dev_loader)
             if self.scheduler is not None:
                 self.scheduler.step(dev_losses[LOSS_KEY])
             for loss_name, value in dev_losses.items():
+                tqdm.write(f'{epoch_idx + 1},{loss_name.capitalize()},{value:.5}')
                 self.workspace.summary_writer.add_scalar(f'Dev/{loss_name.capitalize()}', value, epoch_idx)
             self.workspace.save_model(self.model)
         if test:
             test_losses = self.evaluate(self.test_loader)
             for loss_name, value in test_losses.items():
+                tqdm.write(f'Test,{loss_name.capitalize()},{value:.5}')
                 self.workspace.summary_writer.add_scalar(f'Test/{loss_name.capitalize()}', value)

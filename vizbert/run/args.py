@@ -1,7 +1,7 @@
 from pathlib import Path
-from typing import Sequence
 import argparse
 import enum
+import multiprocessing as mp
 
 import torch
 
@@ -18,9 +18,11 @@ def _make_parser_setter(option, key):
 
 class ArgumentParserOption(object):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, default_init=None, **kwargs):
         self.args = args
         self.kwargs = kwargs
+        if default_init is not None:
+            self.kwargs.setdefault('default', default_init())
 
     def __iter__(self):
         return iter((self.args, self.kwargs))
@@ -55,6 +57,7 @@ class OptionEnum(enum.Enum):
     MODEL = opt('--model', default='bert-base-cased', type=str)
     DEVICE = opt('--device', type=torch.device, default='cuda:0')
     LR = opt('--lr', type=float, default=5e-4)
-    NUM_WORKERS = opt('--num-workers', type=int, default=None)
+    NUM_WORKERS = opt('--num-workers', type=int, default_init=mp.cpu_count)
     NUM_EPOCHS = opt('--num-epochs', type=int, default=1)
     BATCH_SIZE = opt('--batch-size', '-bsz', type=int, default=16)
+    TASK = opt('--task', type=str, required=True)

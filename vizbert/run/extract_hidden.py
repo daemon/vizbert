@@ -28,7 +28,7 @@ def main():
     model = AutoModel.from_pretrained(args.model, config=config)
 
     workspace = ConllWorkspace(args.folder)
-    train_ds, dev_ds, test_ds = workspace.load_conll_splits()
+    train_ds, dev_ds, test_ds = workspace.load_splits()
     collator = ConllTextCollator(tokenizer)
 
     model.cuda()

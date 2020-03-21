@@ -91,13 +91,13 @@ def main():
 
     data_ws = ConllWorkspace(args.data_folder)
     if args.eval_only:
-        test_ds, = data_ws.load_conll_splits(attach_hidden=True, layer_idx=args.layer_idx, splits=(data_ws.test_name,))
+        test_ds, = data_ws.load_splits(attach_hidden=True, layer_idx=args.layer_idx, splits=(data_ws.test_name,))
         test_loader = tud.DataLoader(test_ds, batch_size=args.batch_size, pin_memory=True, collate_fn=collator, num_workers=args.num_workers)
         uuas, dspr = evaluate(test_loader, test_eval=True)
         print(uuas, dspr)
         return
 
-    train_ds, dev_ds, test_ds = data_ws.load_conll_splits(attach_hidden=True, layer_idx=args.layer_idx)
+    train_ds, dev_ds, test_ds = data_ws.load_splits(attach_hidden=True, layer_idx=args.layer_idx)
     train_loader = tud.DataLoader(train_ds, batch_size=args.batch_size, pin_memory=True, collate_fn=collator, shuffle=True, num_workers=args.num_workers)
     dev_loader = tud.DataLoader(dev_ds, batch_size=args.batch_size, pin_memory=True, collate_fn=collator, num_workers=args.num_workers)
     test_loader = tud.DataLoader(test_ds, batch_size=args.batch_size, pin_memory=True, collate_fn=collator, num_workers=args.num_workers)
