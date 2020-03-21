@@ -18,7 +18,7 @@ def main():
         ret = {LOSS_KEY: loss,
                LOSS_SIZE_KEY: token_ids.size(0)}
         if batch.multilabel:
-            ret['recall'] = scores[labels == 1].sum(-1) / labels.float().sum(-1).float()
+            ret['recall'] = (scores[labels == 1] > 0).float().sum(-1) / labels.float().sum(-1).float()
             ret['precision'] = ((scores > 0).float() == labels.float()).sum(-1).float()
             ret['f1'] = (2 * (ret['recall'] * ret['precision']) / (ret['precision'] + ret['recall'])).mean()
             ret['recall'] = ret['recall'].mean()
