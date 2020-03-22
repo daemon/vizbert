@@ -14,7 +14,7 @@ def main():
         scores = model(token_ids,
                        attention_mask=batch.attention_mask.to(args.device),
                        token_type_ids=batch.segment_ids.to(args.device))[0]
-        labels = batch.labels.to(scores.device).float()
+        labels = batch.labels.to(scores.device)
         loss = criterion(scores, labels)
         model.zero_grad()
         ret = {LOSS_KEY: loss,

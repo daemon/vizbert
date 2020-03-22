@@ -50,6 +50,8 @@ class ClassificationLoss(nn.Module):
         self.multilabel = multilabel
 
     def forward(self, scores, labels):
+        if self.multilabel:
+            labels = labels.float()
         return self.criterion(scores, labels)
 
 

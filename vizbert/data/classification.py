@@ -7,7 +7,12 @@ import torch
 import pandas as pd
 
 
-__all__ = ['DataFrameDataset', 'Sst2Workspace', 'ClassificationCollator', 'ReutersWorkspace', 'LabeledTextBatch']
+__all__ = ['DataFrameDataset',
+           'Sst2Workspace',
+           'ClassificationCollator',
+           'ReutersWorkspace',
+           'LabeledTextBatch',
+           'ImdbWorkspace']
 INDEX_COLUMN = 'index'
 SENTENCE1_COLUMN = 'sentence1'
 SENTENCE2_COLUMN = 'sentence2'
@@ -105,7 +110,20 @@ class ReutersWorkspace(object):
 
     def load_splits(self, splits=('train', 'dev', 'test')):
         def load(filename):
-            df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, header=None)
+            df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, header=None, dtype=str)
             df.columns = [LABEL_COLUMN, SENTENCE1_COLUMN]
             return DataFrameDataset(df, num_labels=90, labeled=True, multilabel=True)
+        return [load(str(self.folder / f'{set_type}.tsv')) for set_type in splits]
+
+
+@dataclass
+class ImdbWorkspace(object):
+    folder: Path
+
+    def load_splits(self, splits=('train', 'dev', 'test')):
+        def load(filename):
+            df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, header=None, dtype=str)
+            df.columns = [LABEL_COLUMN, SENTENCE1_COLUMN]
+            df[LABEL_COLUMN] = list(map(lambda x: x.index('1'), df[LABEL_COLUMN]))
+            return DataFrameDataset(df, num_labels=10, labeled=True, multilabel=False)
         return [load(str(self.folder / f'{set_type}.tsv')) for set_type in splits]

@@ -5,7 +5,7 @@ import shutil
 from torch.utils.tensorboard import SummaryWriter
 import torch
 
-from .classification import Sst2Workspace, ReutersWorkspace
+from .classification import Sst2Workspace, ReutersWorkspace, ImdbWorkspace
 from vizbert.data import ConllDataset
 
 
@@ -67,4 +67,4 @@ class TrainingWorkspace(object):
         model.load_state_dict(torch.load(self.folder / self.model_name, lambda s, l: s))
 
 
-DATA_WORKSPACE_CLASSES = dict(conll=ConllWorkspace, reuters=ReutersWorkspace, sst2=Sst2Workspace)
+DATA_WORKSPACE_CLASSES = dict(conll=ConllWorkspace, reuters=ReutersWorkspace, sst2=Sst2Workspace, imdb=ImdbWorkspace)
