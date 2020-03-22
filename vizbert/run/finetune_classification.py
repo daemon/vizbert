@@ -4,6 +4,7 @@ import torch
 
 from .args import ArgumentParserBuilder, OptionEnum, opt
 from vizbert.data import DATA_WORKSPACE_CLASSES, ClassificationCollator, TrainingWorkspace, LabeledTextBatch
+from vizbert.inject import ModelInjector, ProbeDirectionRemovalModule, BertHiddenLayerInjectionHook
 from vizbert.model import ModelTrainer, LOSS_SIZE_KEY, LOSS_KEY, ClassificationLoss
 
 
@@ -46,6 +47,8 @@ def main():
                  OptionEnum.DEVICE,
                  OptionEnum.LOAD_WEIGHTS,
                  OptionEnum.EVAL_ONLY,
+                 OptionEnum.LAYER_IDX.required(False),
+                 opt('--probe-path', type=str),
                  opt('--max-seq-len', '-msl', type=int, default=128),
                  opt('--num-warmup-steps', '-nws', type=int, default=0))
     args = apb.parser.parse_args()
@@ -90,11 +93,19 @@ def main():
                            args.num_epochs,
                            scheduler=scheduler,
                            train_feed_loss_callback=feeder)
-    if args.eval_only:
-        trainer.evaluate(trainer.dev_loader, header='Dev')
-        trainer.evaluate(trainer.test_loader, header='Test')
-    else:
-        trainer.train()
+    hooks = []
+    if args.probe_path:
+        weights = torch.load(args.probe_path)['probe'].t()
+        module = ProbeDirectionRemovalModule(weights)
+        module.to(args.device)
+        hooks.append(BertHiddenLayerInjectionHook(module, args.layer_idx))
+    injector = ModelInjector(model.bert, hooks=hooks)
+    with injector:
+        if args.eval_only:
+            trainer.evaluate(trainer.dev_loader, header='Dev')
+            trainer.evaluate(trainer.test_loader, header='Test')
+        else:
+            trainer.train()
 
 
 if __name__ == '__main__':

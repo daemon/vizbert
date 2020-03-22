@@ -35,7 +35,7 @@ class ProbeDirectionRemovalModule(nn.Module):
     def __init__(self,
                  probe_weight: torch.Tensor,
                  use_complement=False,
-                 normalize=True,
+                 normalize=False,
                  strength=1):
         super().__init__()
         self.use_complement = use_complement

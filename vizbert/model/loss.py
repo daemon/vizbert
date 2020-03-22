@@ -1,9 +1,11 @@
+from functools import partial
+
 from torch.distributions import Categorical
 import torch
 import torch.nn as nn
 
 
-__all__ = ['DistanceMatrixLoss', 'EntropyLoss', 'ClassificationLoss']
+__all__ = ['DistanceMatrixLoss', 'EntropyLoss', 'ClassificationLoss', 'MaskedConceptLoss']
 
 
 class EntropyLoss(nn.Module):
@@ -55,18 +57,23 @@ class MaskedConceptLoss(nn.Module):
 
     def __init__(self, multilabel=False):
         super().__init__()
-        self.kldiv_loss = nn.KLDivLoss(reduction='batchmean')
+        self.criterion = nn.MSELoss()
         self.multilabel = multilabel
 
+    def _multilabel_op(self, x, gold=False):
+        x = x.sigmoid()
+        y = 1 - x
+        if gold:
+            x = x.log()
+            y = y.log()
+        return torch.stack((x, y), -1)
+
     def forward(self, scores: torch.Tensor, gold_scores: torch.Tensor, mask: torch.Tensor):
+        gold_scores[mask] = -1000
         if self.multilabel:
-            recon_scores = scores[1 - mask].unsqueeze(-1).sigmoid().log()
-            recon_gold_scores = gold_scores[1 - mask].unsqueeze(-1).sigmoid()
-            destruct_scores = scores[mask].unsqueeze(-1).sigmoid().log()
+            scores = scores.sigmoid()
+            gold_scores = gold_scores.sigmoid()
         else:
-            recon_scores = scores[1 - mask].log_softmax(-1)
-            recon_gold_scores = gold_scores[1 - mask].softmax(-1)
-            destruct_scores = scores[mask].unsqueeze(-1).log_softmax(-1)
-        recon_loss = self.kldiv_loss(recon_scores, recon_gold_scores)
-        destruct_loss = self.kldiv_loss(destruct_scores, torch.zeros_like(scores[mask]).to(scores.device))
-        return recon_loss + destruct_loss
+            scores = scores.log_softmax(-1)
+            gold_scores = gold_scores.log_softmax(-1)
+        return self.criterion(scores, gold_scores)
