@@ -5,7 +5,7 @@ import shutil
 from torch.utils.tensorboard import SummaryWriter
 import torch
 
-from .classification import Sst2Workspace, ReutersWorkspace, ImdbWorkspace, AapdWorkspace
+from .classification import Sst2Workspace, ReutersWorkspace, ImdbWorkspace, AapdWorkspace, Sst5Workspace
 from vizbert.data import ConllDataset
 
 
@@ -71,4 +71,5 @@ DATA_WORKSPACE_CLASSES = dict(conll=ConllWorkspace,
                               reuters=ReutersWorkspace,
                               sst2=Sst2Workspace,
                               imdb=ImdbWorkspace,
-                              aapd=AapdWorkspace)
+                              aapd=AapdWorkspace,
+                              sst5=Sst5Workspace)

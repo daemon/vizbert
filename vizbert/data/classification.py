@@ -13,7 +13,8 @@ __all__ = ['DataFrameDataset',
            'ReutersWorkspace',
            'LabeledTextBatch',
            'ImdbWorkspace',
-           'AapdWorkspace']
+           'AapdWorkspace',
+           'Sst5Workspace']
 
 INDEX_COLUMN = 'index'
 SENTENCE1_COLUMN = 'sentence1'
@@ -154,3 +155,16 @@ class ImdbWorkspace(object):
             df[LABEL_COLUMN] = list(map(lambda x: x.index('1'), df[LABEL_COLUMN]))
             return DataFrameDataset(df, num_labels=10, labeled=True, multilabel=False)
         return [load(str(self.folder / f'{set_type}.tsv')) for set_type in splits]
+
+
+@dataclass
+class Sst5Workspace(object):
+    folder: Path
+
+    def load_splits(self, splits=('train', 'dev', 'test')):
+        def load(filename):
+            df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, header=None, dtype=str)
+            df.columns = [LABEL_COLUMN, SENTENCE1_COLUMN]
+            df[LABEL_COLUMN] = list(map(int, df[LABEL_COLUMN]))
+            return DataFrameDataset(df, num_labels=5, labeled=True, multilabel=False)
+        return [load(str(self.folder / f'stsa.fine.{set_type}')) for set_type in splits]

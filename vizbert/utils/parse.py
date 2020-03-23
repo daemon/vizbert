@@ -179,3 +179,5 @@ def quick_nlp(lang: str = 'en', name: str = None, **kwargs):
         return stanza.Pipeline(lang, **kwargs)
     if name == 'pos':
         return stanza.Pipeline(lang, processors='tokenize,pos', **kwargs)
+    if name == 'tokenize':
+        return stanza.Pipeline(lang, processors='tokenize', **kwargs)
