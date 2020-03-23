@@ -64,7 +64,8 @@ class ModelTrainer(object):
                 tot_loss += loss.item() * ret[LOSS_SIZE_KEY]
                 tot_len += loss_size
                 del ret[LOSS_SIZE_KEY]
-                pbar.set_postfix(dict(loss=f'{tot_loss / tot_len:.3}'))
+                curr_mean = tot_loss / tot_len if tot_len > 0 else 0.0
+                pbar.set_postfix(dict(loss=f'{curr_mean:.3}'))
                 for k, v in ret.items():
                     all_losses[k] += v.item() * loss_size
         all_losses = {k: v / tot_len for k, v in all_losses.items()}

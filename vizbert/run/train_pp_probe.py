@@ -32,7 +32,7 @@ def main():
                                  attention_mask=batch.attention_mask.to(args.device),
                                  token_type_ids=batch.segment_ids.to(args.device))[0]
         mask = torch.zeros_like(gold_scores)
-        mask[:, args.mask_class] = 1
+        mask[:, args.mask_classes] = 1
         loss = criterion(recon_scores, gold_scores, mask.bool())
         model.zero_grad()
         return {LOSS_KEY: loss,
@@ -49,12 +49,15 @@ def main():
                  OptionEnum.DEVICE,
                  OptionEnum.BATCH_SIZE,
                  OptionEnum.LR,
+                 OptionEnum.EVAL_ONLY,
+                 opt('--load-probe', action='store_true'),
                  opt('--load-weights', type=str),
                  opt('--no-basic-tokenize', action='store_false', dest='basic_tokenize'),
-                 opt('--dataset', '-d', type=str, default='conll', choices=['conll', 'sst2', 'reuters']),
+                 opt('--dataset', '-d', type=str, default='conll', choices=['conll', 'sst2', 'reuters', 'sst5', 'aapd']),
                  opt('--num-features', type=int, default=768),
                  opt('--objective', type=str, default='concept', choices=['concept', 'entropy']),
-                 opt('--mask-class', type=int))
+                 opt('--mask-classes', type=int, nargs='+'),
+                 opt('--mask-weight', type=float, default=1))
     args = apb.parser.parse_args()
 
     if args.num_workers is None:
@@ -80,11 +83,16 @@ def main():
     hook = BertHiddenLayerInjectionHook(probe, args.layer_idx - 1)
     injector = ModelInjector(model.bert, hooks=[hook])
     workspace = TrainingWorkspace(args.workspace)
+    if args.load_probe:
+        sd = workspace.load_model(probe)
+        for _, param in zip((k for k in sd if k.startswith('probe_params')), probe.probe_params):
+            param.requires_grad = False
+
     tok_config = {}
     if 'bert' in args.model:
         tok_config['do_basic_tokenize'] = args.basic_tokenize
     tokenizer = AutoTokenizer.from_pretrained(args.model, **tok_config)
-    criterion = EntropyLoss() if args.objective == 'entropy' else MaskedConceptLoss(multilabel=dev_ds.multilabel)
+    criterion = EntropyLoss() if args.objective == 'entropy' else MaskedConceptLoss(multilabel=dev_ds.multilabel, weight=args.mask_weight)
     feeder = entropy_feeder if args.objective == 'entropy' else classification_concept_loss_feeder
     if args.dataset == 'conll':
         collator = ConllTextCollator(tokenizer)
@@ -105,8 +113,13 @@ def main():
                            args.num_epochs,
                            feeder,
                            scheduler=scheduler)
-    with injector:
-        trainer.train(test=args.dataset != 'sst2')
+    if args.eval_only:
+        with injector:
+            trainer.evaluate(trainer.dev_loader, 'Dev')
+            trainer.evaluate(trainer.test_loader, 'Dev')
+    else:
+        with injector:
+            trainer.train(test=args.dataset != 'sst2')
 
 
 if __name__ == '__main__':

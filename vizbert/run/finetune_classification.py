@@ -15,7 +15,20 @@ def main():
                        attention_mask=batch.attention_mask.to(args.device),
                        token_type_ids=batch.segment_ids.to(args.device))[0]
         labels = batch.labels.to(scores.device)
-        loss = criterion(scores, labels)
+        if args.filter_labels:
+            if batch.multilabel:
+                mask = [any([idx in args.filter_labels for idx, lbl in enumerate(lbls) if lbl == 1]) for lbls in labels.tolist()]
+            else:
+                mask = [x in args.filter_labels for x in labels.tolist()]
+            if args.invert_filter:
+                mask = [not x for x in mask]
+            scores = scores[mask]
+            labels = labels[mask]
+            token_ids = token_ids[mask]
+        if token_ids.size(0) == 0:
+            loss = torch.zeros(1).to(token_ids.device)
+        else:
+            loss = criterion(scores, labels)
         model.zero_grad()
         ret = {LOSS_KEY: loss,
                LOSS_SIZE_KEY: token_ids.size(0)}
@@ -31,8 +44,15 @@ def main():
             ret['recall'] = ret['recall'].mean()
             ret['f1'] = ret['f1'].mean()
             ret['precision'] = ret['precision'].mean()
+            if token_ids.size(0) == 0:
+                ret['precision'].zero_()
+                ret['f1'].zero_()
+                ret['recall'].zero_()
         else:
-            ret['accuracy'] = (scores.max(-1)[1] == labels).float().mean()
+            if token_ids.size(0) == 0:
+                ret['accuracy'] = torch.zeros(1).to(token_ids.device)
+            else:
+                ret['accuracy'] = (scores.max(-1)[1] == labels).float().mean()
         return ret
 
     apb = ArgumentParserBuilder()
@@ -50,14 +70,19 @@ def main():
                  OptionEnum.LAYER_IDX.required(False),
                  opt('--probe-path', type=str),
                  opt('--max-seq-len', '-msl', type=int, default=128),
-                 opt('--num-warmup-steps', '-nws', type=int, default=0))
+                 opt('--num-warmup-steps', '-nws', type=int, default=0),
+                 opt('--filter-labels', type=int, nargs='+', default=[]),
+                 opt('--invert-filter', action='store_true'))
     args = apb.parser.parse_args()
+    args.filter_labels = set(args.filter_labels)
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     dws = DATA_WORKSPACE_CLASSES[args.task](args.data_folder)
     datasets = dws.load_splits()
     tws = TrainingWorkspace(args.workspace)
-    collator = ClassificationCollator(tokenizer, multilabel=datasets[0].multilabel, max_length=args.max_seq_len)
+    collator = ClassificationCollator(tokenizer,
+                                      multilabel=datasets[0].multilabel,
+                                      max_length=args.max_seq_len)
     loaders = [tud.DataLoader(ds,
                               batch_size=args.batch_size,
                               shuffle=do_shuffle,

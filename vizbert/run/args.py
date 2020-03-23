@@ -52,6 +52,7 @@ class ArgumentParserBuilder(object):
 class OptionEnum(enum.Enum):
     DATA_FOLDER = opt('--data-folder', '-df', type=Path, required=True)
     OUTPUT_FOLDER = opt('--output-folder', '-of', type=Path, required=True)
+    OUTPUT_FILE = opt('--output-file', '-o', type=Path, required=True)
     WORKSPACE = opt('--workspace', '-w', type=Path, required=True)
     LAYER_IDX = opt('--layer-idx', '-l', type=int, required=True)
     PROBE_RANK = opt('--probe-rank', type=int, default=2)

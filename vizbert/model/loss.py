@@ -2,6 +2,7 @@ from functools import partial
 
 from torch.distributions import Categorical
 import torch
+import torch.nn.functional as F
 import torch.nn as nn
 
 
@@ -57,25 +58,28 @@ class ClassificationLoss(nn.Module):
 
 class MaskedConceptLoss(nn.Module):
 
-    def __init__(self, multilabel=False):
+    def __init__(self, multilabel=False, weight=1):
         super().__init__()
-        self.criterion = nn.MSELoss()
+        self.criterion = nn.L1Loss()  # TVD
         self.multilabel = multilabel
+        self.weight = weight
 
     def _multilabel_op(self, x, gold=False):
         x = x.sigmoid()
         y = 1 - x
-        if gold:
+        if not gold:
             x = x.log()
             y = y.log()
         return torch.stack((x, y), -1)
 
     def forward(self, scores: torch.Tensor, gold_scores: torch.Tensor, mask: torch.Tensor):
         gold_scores[mask] = -1000
+        scores[mask] *= self.weight
         if self.multilabel:
             scores = scores.sigmoid()
             gold_scores = gold_scores.sigmoid()
         else:
-            scores = scores.log_softmax(-1)
-            gold_scores = gold_scores.log_softmax(-1)
-        return self.criterion(scores, gold_scores)
+            scores = scores.softmax(-1)
+            gold_scores = gold_scores.softmax(-1)
+        tvd = 0.5 * self.criterion(scores, gold_scores)
+        return tvd

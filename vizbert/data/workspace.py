@@ -64,7 +64,9 @@ class TrainingWorkspace(object):
         torch.save(model.state_dict(), self.folder / self.model_name)
 
     def load_model(self, model: torch.nn.Module):
-        model.load_state_dict(torch.load(self.folder / self.model_name, lambda s, l: s))
+        state_dict = torch.load(self.folder / self.model_name, lambda s, l: s)
+        model.load_state_dict(state_dict, strict=False)
+        return state_dict
 
 
 DATA_WORKSPACE_CLASSES = dict(conll=ConllWorkspace,

@@ -35,18 +35,24 @@ class ProjectionPursuitProbe(nn.Module):
         self.rank = rank
         self.normalize = normalize
         self.mask_first = mask_first
-        self.probe = nn.Parameter(torch.empty(num_features, rank, dtype=torch.float32).uniform_(-0.05, 0.05), requires_grad=True)
+        self.probe_ = [nn.Parameter(torch.empty(num_features, dtype=torch.float32).uniform_(-0.05, 0.05), requires_grad=True) for _ in range(rank)]
+        self.probe_params = nn.ParameterList(self.probe_)
         self.orthogonalize = orthogonalize
 
+    @property
     def orth_probe(self):
-        return orth_tensor(self.probe)
+        return orth_tensor(torch.stack(self.probe_, 1))
+
+    @property
+    def probe(self):
+        return torch.stack(self.probe_, 1)
 
     def forward(self, hidden_states: torch.Tensor):
         if self.normalize:
             old_norms = hidden_states.norm(dim=2).unsqueeze(-1)
         if self.mask_first:
             first_state = hidden_states[:, 0]
-        hidden_states = full_batch_gs(self.orth_probe() if self.orthogonalize else self.probe, hidden_states)
+        hidden_states = full_batch_gs(self.orth_probe if self.orthogonalize else self.probe, hidden_states)
         if self.normalize:
             norms = hidden_states.norm(dim=2).unsqueeze(-1)
             hidden_states = (hidden_states / norms) * old_norms
