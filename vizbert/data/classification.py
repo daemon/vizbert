@@ -12,11 +12,14 @@ __all__ = ['DataFrameDataset',
            'ClassificationCollator',
            'ReutersWorkspace',
            'LabeledTextBatch',
-           'ImdbWorkspace']
+           'ImdbWorkspace',
+           'AapdWorkspace']
+
 INDEX_COLUMN = 'index'
 SENTENCE1_COLUMN = 'sentence1'
 SENTENCE2_COLUMN = 'sentence2'
 LABEL_COLUMN = 'label'
+LABEL_NAMES_COLUMN = 'label_names'
 
 
 @dataclass
@@ -74,11 +77,18 @@ class ClassificationCollator(object):
 
 class DataFrameDataset(tud.Dataset):
 
-    def __init__(self, dataframe: pd.DataFrame, num_labels: int, labeled: bool = False, multilabel: bool = False):
+    def __init__(self,
+                 dataframe: pd.DataFrame,
+                 num_labels: int,
+                 labeled: bool = False,
+                 multilabel: bool = False,
+                 label_map: Sequence[str] = None):
         self.dataframe = dataframe
         self.num_labels = num_labels
         self.labeled = labeled
         self.multilabel = multilabel
+        self.l2idx = label_map
+        self.idx2l = {v: k for v, k in enumerate(label_map)} if label_map else None
 
     def __len__(self):
         return len(self.dataframe)
@@ -113,6 +123,23 @@ class ReutersWorkspace(object):
             df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, header=None, dtype=str)
             df.columns = [LABEL_COLUMN, SENTENCE1_COLUMN]
             return DataFrameDataset(df, num_labels=90, labeled=True, multilabel=True)
+        return [load(str(self.folder / f'{set_type}.tsv')) for set_type in splits]
+
+
+@dataclass
+class AapdWorkspace(object):
+    folder: Path
+
+    def load_splits(self, splits=('train', 'dev', 'test')):
+        def load(filename):
+            df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, dtype=str)
+            df.columns = [SENTENCE1_COLUMN, LABEL_COLUMN, LABEL_NAMES_COLUMN]
+            return DataFrameDataset(df, num_labels=54, labeled=True, multilabel=True, label_map=idx2l)
+        idx2l = []
+        with open(str(self.folder / 'labels.csv')) as f:
+            for idx, line in enumerate(f.readlines()):
+                label = line.split(',')[1].strip()
+                idx2l.append(label)
         return [load(str(self.folder / f'{set_type}.tsv')) for set_type in splits]
 
 
