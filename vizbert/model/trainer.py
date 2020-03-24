@@ -29,6 +29,7 @@ class ModelTrainer(object):
     dev_feed_loss_callback: InputLossFeeder = None
     test_feed_loss_callback: InputLossFeeder = None
     scheduler: Any = None
+    optimization_limit: int = None
 
     def __post_init__(self):
         if self.dev_feed_loss_callback is None:
@@ -36,6 +37,7 @@ class ModelTrainer(object):
         if self.test_feed_loss_callback is None:
             self.test_feed_loss_callback = self.train_feed_loss_callback
         self.training = True
+        self.step_no = 0
 
     @property
     def train_loader(self):
@@ -74,16 +76,27 @@ class ModelTrainer(object):
         return all_losses
 
     def train(self, test=True):
+        do_exit = False
         for epoch_idx in trange(self.num_epochs, position=0):
             self.training = True
-            pbar = tqdm(self.train_loader, total=len(self.train_loader), position=1)
+            tot_steps = len(self.train_loader)
+            if self.optimization_limit is not None:
+                tot_steps = min(tot_steps, self.optimization_limit - self.step_no)
+            pbar = tqdm(self.train_loader, total=tot_steps, position=1)
             for train_idx, batch in enumerate(pbar):
                 loss = self.train_feed_loss_callback(self, batch)[LOSS_KEY]
                 self.model.zero_grad()
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
+                self.step_no += 1
                 pbar.set_postfix(dict(loss=f'{loss.item():.3}'))
+                if self.step_no == self.optimization_limit:
+                    do_exit = True
+                if do_exit:
+                    break
+            if do_exit:
+                break
             dev_losses = self.evaluate(self.dev_loader, header=epoch_idx + 1)
             if self.scheduler is not None:
                 self.scheduler.step(dev_losses[LOSS_KEY])

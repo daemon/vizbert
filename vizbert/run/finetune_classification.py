@@ -1,11 +1,13 @@
+from pathlib import Path
+
 from transformers import AutoConfig, AutoTokenizer, AutoModelForSequenceClassification, AdamW, get_linear_schedule_with_warmup
 import torch.utils.data as tud
 import torch
 
 from .args import ArgumentParserBuilder, OptionEnum, opt
-from vizbert.data import DATA_WORKSPACE_CLASSES, ClassificationCollator, TrainingWorkspace, LabeledTextBatch
+from vizbert.data import DATA_WORKSPACE_CLASSES, ClassificationCollator, TrainingWorkspace, LabeledTextBatch, ZeroMeanTransform
 from vizbert.inject import ModelInjector, ProbeDirectionRemovalModule, BertHiddenLayerInjectionHook
-from vizbert.model import ModelTrainer, LOSS_SIZE_KEY, LOSS_KEY, ClassificationLoss
+from vizbert.model import ModelTrainer, LOSS_SIZE_KEY, LOSS_KEY, ClassificationLoss, ProjectionPursuitProbe
 
 
 def main():
@@ -62,13 +64,15 @@ def main():
                  OptionEnum.TASK,
                  OptionEnum.NUM_EPOCHS.default(3),
                  OptionEnum.WORKSPACE,
+                 OptionEnum.PROBE_RANK.required(False),
                  OptionEnum.NUM_WORKERS,
                  OptionEnum.MODEL.default('bert-base-uncased'),
                  OptionEnum.DEVICE,
                  OptionEnum.LOAD_WEIGHTS,
                  OptionEnum.EVAL_ONLY,
+                 OptionEnum.USE_ZMT,
                  OptionEnum.LAYER_IDX.required(False),
-                 opt('--probe-path', type=str),
+                 opt('--probe-path', type=Path),
                  opt('--max-seq-len', '-msl', type=int, default=128),
                  opt('--num-warmup-steps', '-nws', type=int, default=0),
                  opt('--filter-labels', type=int, nargs='+', default=[]),
@@ -120,10 +124,18 @@ def main():
                            train_feed_loss_callback=feeder)
     hooks = []
     if args.probe_path:
-        weights = torch.load(args.probe_path)['probe'].t()
-        module = ProbeDirectionRemovalModule(weights)
-        module.to(args.device)
-        hooks.append(BertHiddenLayerInjectionHook(module, args.layer_idx))
+        probe = ProjectionPursuitProbe(768, args.probe_rank, mask_first=True)
+        pws = TrainingWorkspace(args.probe_path)
+        if args.use_zmt:
+            zmt = ZeroMeanTransform(768, 2)
+            probe.zmt = zmt
+        pws.load_model(probe)
+        # w = torch.load('svd.pt')
+        # with torch.no_grad():
+        #     probe.probe_params[0].set_(torch.from_numpy(w)[0])
+        #     probe.probe_params[1].set_(torch.from_numpy(w)[1])
+        probe.to(args.device)
+        hooks.append(BertHiddenLayerInjectionHook(probe, args.layer_idx - 1))
     injector = ModelInjector(model.bert, hooks=hooks)
     with injector:
         if args.eval_only:

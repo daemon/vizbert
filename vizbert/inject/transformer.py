@@ -67,7 +67,7 @@ class ProbeReportingModule(nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.buffer = None
+        self.buffer = None  # type: torch.Tensor
 
     def forward(self, hidden_states):
         self.buffer = hidden_states

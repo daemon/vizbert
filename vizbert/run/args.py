@@ -65,3 +65,5 @@ class OptionEnum(enum.Enum):
     TASK = opt('--task', type=str, required=True)
     LOAD_WEIGHTS = opt('--load-weights', action='store_true')
     EVAL_ONLY = opt('--eval-only', action='store_true')
+    USE_ZMT = opt('--use-zmt', action='store_true')
+    OPTIMIZE_MEAN = opt('--optimize-mean', action='store_true')

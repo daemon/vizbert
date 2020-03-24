@@ -2,13 +2,14 @@ import multiprocessing as mp
 
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from tqdm import tqdm
 from transformers import AutoTokenizer, BertForMaskedLM, BertForSequenceClassification, AutoConfig
 import torch
 import torch.utils.data as tud
 
 from .args import ArgumentParserBuilder, OptionEnum, opt
-from vizbert.data import ConllTextCollator, TrainingWorkspace, ClassificationCollator, DATA_WORKSPACE_CLASSES
-from vizbert.inject import ModelInjector, BertHiddenLayerInjectionHook
+from vizbert.data import ConllTextCollator, TrainingWorkspace, ClassificationCollator, DATA_WORKSPACE_CLASSES, ZeroMeanTransform
+from vizbert.inject import ModelInjector, BertHiddenLayerInjectionHook, ProbeReportingModule
 from vizbert.model import ProjectionPursuitProbe, EntropyLoss, ModelTrainer, LOSS_KEY, LOSS_SIZE_KEY, MaskedConceptLoss
 
 
@@ -34,9 +35,12 @@ def main():
         mask = torch.zeros_like(gold_scores)
         mask[:, args.mask_classes] = 1
         loss = criterion(recon_scores, gold_scores, mask.bool())
+        l1_penalty = probe.l1_penalty(args.l1_penalty)
+        loss += l1_penalty
         model.zero_grad()
         return {LOSS_KEY: loss,
-                LOSS_SIZE_KEY: token_ids.size(0)}
+                LOSS_SIZE_KEY: token_ids.size(0),
+                'l1': l1_penalty}
 
     apb = ArgumentParserBuilder()
     apb.add_opts(OptionEnum.DATA_FOLDER,
@@ -50,6 +54,10 @@ def main():
                  OptionEnum.BATCH_SIZE,
                  OptionEnum.LR,
                  OptionEnum.EVAL_ONLY,
+                 OptionEnum.USE_ZMT,
+                 OptionEnum.OPTIMIZE_MEAN,
+                 opt('--opt-limit', type=int),
+                 opt('--zmt-limit', type=int, default=1000),
                  opt('--load-probe', action='store_true'),
                  opt('--load-weights', type=str),
                  opt('--no-basic-tokenize', action='store_false', dest='basic_tokenize'),
@@ -57,6 +65,7 @@ def main():
                  opt('--num-features', type=int, default=768),
                  opt('--objective', type=str, default='concept', choices=['concept', 'entropy']),
                  opt('--mask-classes', type=int, nargs='+'),
+                 opt('--l1-penalty', type=float, default=0),
                  opt('--mask-weight', type=float, default=1))
     args = apb.parser.parse_args()
 
@@ -78,7 +87,8 @@ def main():
         model2.load_state_dict(torch.load(args.load_weights))
     probe = ProjectionPursuitProbe(args.num_features,
                                    rank=args.probe_rank,
-                                   mask_first=args.dataset != 'conll').to(args.device)
+                                   mask_first=args.dataset != 'conll',
+                                   optimize_mean=args.optimize_mean).to(args.device)
     # probe.probe.data = torch.load('pca.pt')['b'].t().to(args.device)
     hook = BertHiddenLayerInjectionHook(probe, args.layer_idx - 1)
     injector = ModelInjector(model.bert, hooks=[hook])
@@ -104,6 +114,21 @@ def main():
 
     model.eval()
     model2.eval()
+    if args.use_zmt:
+        zmt = ZeroMeanTransform(768, 2).to(args.device)
+        reporting_module = ProbeReportingModule()
+        t_hook = BertHiddenLayerInjectionHook(reporting_module, args.layer_idx - 1)
+        zmt_injector = ModelInjector(model.bert, hooks=[t_hook])
+        with zmt_injector:
+            for idx, batch in enumerate(tqdm(train_loader, total=min(len(train_loader), args.zmt_limit), desc='Computing ZMT')):
+                model(batch.token_ids.to(args.device),
+                      attention_mask=batch.attention_mask.to(args.device),
+                      token_type_ids=batch.segment_ids.to(args.device))
+                zmt.update(reporting_module.buffer, mask=batch.attention_mask.to(args.device).unsqueeze(-1).expand_as(reporting_module.buffer))
+                if idx == args.zmt_limit:
+                    break
+        probe.zmt = zmt
+
     optimizer = Adam(filter(lambda x: x.requires_grad, probe.parameters()), lr=args.lr)
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=0)
     trainer = ModelTrainer((train_loader, dev_loader, test_loader),
@@ -112,6 +137,7 @@ def main():
                            optimizer,
                            args.num_epochs,
                            feeder,
+                           optimization_limit=args.opt_limit,
                            scheduler=scheduler)
     if args.eval_only:
         with injector:

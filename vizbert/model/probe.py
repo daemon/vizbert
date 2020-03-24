@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+from vizbert.data import ZeroMeanTransform
 from vizbert.utils import orth_tensor, full_batch_gs
 
 
@@ -27,17 +28,31 @@ class InnerProductProbe(nn.Module):
 
 class ProjectionPursuitProbe(nn.Module):
 
-    def __init__(self, num_features, rank=None, normalize=False, orthogonalize=True, mask_first=False):
+    def __init__(self,
+                 num_features,
+                 rank=None,
+                 normalize=False,
+                 orthogonalize=True,
+                 mask_first=False,
+                 zero_mean_transform: ZeroMeanTransform = None,
+                 optimize_mean: bool = False):
         super().__init__()
         self.num_features = num_features
         if rank is None:
             rank = self.num_features
+        self.zmt = zero_mean_transform
         self.rank = rank
         self.normalize = normalize
         self.mask_first = mask_first
+        self.optimize_mean = optimize_mean
+        if optimize_mean:
+            self.mean = nn.Parameter(torch.zeros(num_features), requires_grad=True)
         self.probe_ = [nn.Parameter(torch.empty(num_features, dtype=torch.float32).uniform_(-0.05, 0.05), requires_grad=True) for _ in range(rank)]
         self.probe_params = nn.ParameterList(self.probe_)
         self.orthogonalize = orthogonalize
+
+    def l1_penalty(self, weight):
+        return weight * self.probe_params[0].norm(p=1)
 
     @property
     def orth_probe(self):
@@ -48,6 +63,10 @@ class ProjectionPursuitProbe(nn.Module):
         return torch.stack(self.probe_, 1)
 
     def forward(self, hidden_states: torch.Tensor):
+        if self.optimize_mean:
+            hidden_states = hidden_states - self.mean.unsqueeze(0).unsqueeze(0)
+        if self.zmt is not None:
+            hidden_states = self.zmt(hidden_states, shift='subtract')
         if self.normalize:
             old_norms = hidden_states.norm(dim=2).unsqueeze(-1)
         if self.mask_first:
@@ -58,4 +77,8 @@ class ProjectionPursuitProbe(nn.Module):
             hidden_states = (hidden_states / norms) * old_norms
         if self.mask_first:
             hidden_states[:, 0] = first_state
+        if self.zmt is not None:
+            hidden_states = self.zmt(hidden_states, shift='add')
+        if self.optimize_mean:
+            hidden_states = hidden_states + self.mean.unsqueeze(0).unsqueeze(0)
         return hidden_states
