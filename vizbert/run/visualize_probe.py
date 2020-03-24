@@ -2,14 +2,17 @@ import multiprocessing as mp
 
 from matplotlib import pyplot as plt
 from transformers import AutoTokenizer, BertForMaskedLM, BertForSequenceClassification
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA, TruncatedSVD
 from sklearn.manifold import TSNE
+from tqdm import tqdm
+import numpy as np
 import torch
 import torch.utils.data as tud
 
 from .args import ArgumentParserBuilder, OptionEnum, opt
 from vizbert.model import ProjectionPursuitProbe
-from vizbert.data import ConllWorkspace, ConllTextCollator, TrainingWorkspace, DATA_WORKSPACE_CLASSES, ClassificationCollator
+from vizbert.data import ConllWorkspace, ConllTextCollator, TrainingWorkspace, DATA_WORKSPACE_CLASSES,\
+    ClassificationCollator, ZeroMeanTransform
 from vizbert.inject import ModelInjector, BertHiddenLayerInjectionHook, ProbeReportingModule
 from vizbert.utils import batch_gs_coeffs
 
@@ -23,8 +26,10 @@ def main():
                  OptionEnum.NUM_WORKERS,
                  OptionEnum.DEVICE,
                  OptionEnum.PROBE_RANK,
-                 OptionEnum.OUTPUT_FILE.required(False).default('output.pkl'),
-                 opt('--project-type', type=str, choices=['pca', 'probe', 'tsne'], default='probe'),
+                 OptionEnum.OUTPUT_FOLDER,
+                 OptionEnum.USE_ZMT,
+                 OptionEnum.OPTIMIZE_MEAN,
+                 opt('--project-type', type=str, choices=['pca', 'probe', 'tsne', 'svd'], default='probe'),
                  opt('--load-weights', type=str),
                  opt('--no-basic-tokenize', action='store_false', dest='basic_tokenize'),
                  opt('--limit', type=int, default=30),
@@ -41,8 +46,10 @@ def main():
         collator = ConllTextCollator(tokenizer)
     else:
         dw = DATA_WORKSPACE_CLASSES[args.dataset](args.data_folder)
-        dev_ds, = dw.load_splits(splits=('dev',))
+        train_ds, dev_ds = dw.load_splits(splits=('train', 'dev',))
         collator = ClassificationCollator(tokenizer, multilabel=dev_ds.multilabel, max_length=128)
+    train_loader = tud.DataLoader(train_ds, shuffle=True, batch_size=1, pin_memory=True, collate_fn=collator,
+                                  num_workers=args.num_workers)
     dev_loader = tud.DataLoader(dev_ds, shuffle=True, batch_size=1, pin_memory=True, collate_fn=collator, num_workers=args.num_workers)
 
     if args.num_workers is None:
@@ -60,22 +67,29 @@ def main():
     workspace = TrainingWorkspace(args.workspace)
     model.eval()
 
-    probe = ProjectionPursuitProbe(768, args.probe_rank)
+    try:
+        args.output_folder.mkdir()
+    except:
+        pass
+
+    probe = ProjectionPursuitProbe(768, args.probe_rank, optimize_mean=args.optimize_mean)
+    if args.use_zmt:
+        zmt = ZeroMeanTransform(768, 2).to(args.device)
+        probe.zmt = zmt
+
     workspace.load_model(probe)
     proj_matrix = probe.orth_probe.to(args.device)
-    if proj_matrix.size(1) > 3:
-        print('Error: unable to visualize more than three dimensions.')
-        return
     use_pca = args.project_type == 'pca'
+    use_svd = args.project_type == 'svd'
     use_tsne = args.project_type == 'tsne'
-    fig, ax = plt.subplots(figsize=(12, 8))
-    ax = plt.axes(projection='3d')
-    if use_pca or use_tsne:
+    probe.to(args.device)
+
+    if use_pca or use_tsne or use_svd:
         states = []
         raw_texts = []
         colors = []
         with injector, torch.no_grad():
-            for idx, batch in enumerate(dev_loader):
+            for idx, batch in enumerate(tqdm(train_loader, total=len(train_loader))):
                 scores = model(batch.token_ids.to(args.device), attention_mask=batch.attention_mask.to(args.device))
                 data = reporting_module.buffer
                 scores = scores[0].softmax(1)[0]
@@ -86,22 +100,29 @@ def main():
                     break
         states = torch.cat(states, 0).cpu().numpy()
         if use_pca:
-            pca = PCA(2)
+            pca = PCA(args.probe_rank)
             pca.fit(states)
             torch.save(dict(b=torch.from_numpy(pca.components_)), 'pca.pt')
+            lo_dim_model = pca
+        elif use_svd:
+            svd = TruncatedSVD(n_components=args.probe_rank)
+            svd.fit(states)
+            print(svd.explained_variance_ratio_, svd.singular_values_)
+            torch.save(svd.components_, 'svd.pt')
+            lo_dim_model = svd
         elif use_tsne:
             tsne = TSNE()
             states = tsne.fit_transform(states)
-            if args.probe_rank == 2:
-                ax.scatter(*(states.T), c=colors, s=2)
-            elif args.probe_rank == 3:
-                ax.scatter3D(*(states.T), c=colors, s=2)
+            fig, ax = plt.subplots(figsize=(12, 8))
+            ax.scatter(states[:, 0], states[:, 1], c=colors, s=2)
             for pair, token in zip(states, raw_texts):  #('[CLS] ' + batch.raw_text[0] + ' [SEP]').split(' ')):
-                ax.text(*pair, token, size='xx-small')
-            plt.show()
+                ax.annotate(token, pair, size='xx-small')
+            fig.savefig(args.output_folder / 'output-tsne.png', dpi=300)
             return
 
     with injector, torch.no_grad():
+        coeffs_lst = []
+        tokens_lst = []
         for idx, batch in enumerate(dev_loader):
             scores = model(batch.token_ids.to(args.device), attention_mask=batch.attention_mask.to(args.device))
             # scores = scores[0].softmax(1)[0]
@@ -110,19 +131,26 @@ def main():
             # coloring = compute_coloring(tokenizer, batch.raw_text[0])
             # assert len(coloring) + 2 == batch.token_ids.size(1)
             # data = merge_by_segmentation(data[0], coloring).unsqueeze(0)
-            if use_pca:
-                coeffs = pca.transform(data[0].cpu().numpy()).T
+            if use_pca or use_svd:
+                coeffs = lo_dim_model.transform(data[0].cpu().numpy()).T
             else:
+                if args.optimize_mean:
+                    data = data - probe.mean.unsqueeze(0).unsqueeze(0).to(data.device)
+                if args.use_zmt:
+                    data = probe.zmt(data)
                 coeffs = batch_gs_coeffs(proj_matrix, data).squeeze().cpu().numpy().T  # sequence, coeff
-            if args.probe_rank == 2:
-                ax.scatter(*coeffs, c='b', s=1.25)
-            elif args.probe_rank == 3:
-                ax.scatter3D(*coeffs, c='b', s=1.25)
-            for pair, token in zip(coeffs.T, [tokenizer.convert_ids_to_tokens(x) for x in batch.token_ids[0].tolist()]):  #('[CLS] ' + batch.raw_text[0] + ' [SEP]').split(' ')):
-                ax.text(*pair, token, size='xx-small')
+            coeffs_lst.append(coeffs)
+            tokens_lst.extend([tokenizer.convert_ids_to_tokens(x) for x in batch.token_ids[0].tolist()])
             if idx == args.limit:
                 break
-    plt.show()
+    coeffs = np.concatenate(coeffs_lst, 1)
+    for i in range(args.probe_rank - 1):
+        for j in range(i + 1, args.probe_rank):
+            fig, ax = plt.subplots(figsize=(12, 8))
+            ax.scatter(coeffs[i, :], coeffs[j, :], c='b', s=1.25)
+            for pair, token in zip(coeffs[(i, j), :].T, tokens_lst):  # ('[CLS] ' + batch.raw_text[0] + ' [SEP]').split(' ')):
+                ax.annotate(token, pair, size='xx-small')
+            fig.savefig(args.output_folder / f'output-pp-{i}-{j}.png', dpi=300)
 
 
 if __name__ == '__main__':
