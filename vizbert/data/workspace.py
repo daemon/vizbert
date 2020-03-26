@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from pathlib import Path
+import json
 import shutil
+import sys
 
 from torch.utils.tensorboard import SummaryWriter
 import torch
@@ -43,6 +45,7 @@ class ConllWorkspace(object):
 class TrainingWorkspace(object):
     folder: Path
     model_name = 'model.pt'
+    cli_name = 'cli.json'
 
     @property
     def model_path(self):
@@ -59,12 +62,22 @@ class TrainingWorkspace(object):
         except:
             pass
         self.summary_writer = SummaryWriter(str(self.log_path))
+        with open(str(self.folder / self.cli_name), 'w') as f:
+            json.dump(sys.argv, f, indent=4)
 
-    def save_model(self, model: torch.nn.Module):
-        torch.save(model.state_dict(), self.folder / self.model_name)
+    def save_model(self, model: torch.nn.Module, model_name=None):
+        if model_name is None:
+            model_name = Path(self.model_name)
+        else:
+            model_name = Path(model_name).with_suffix('.pt')
+        torch.save(model.state_dict(), self.folder / model_name.name)
 
-    def load_model(self, model: torch.nn.Module):
-        state_dict = torch.load(self.folder / self.model_name, lambda s, l: s)
+    def load_model(self, model: torch.nn.Module, model_name=None):
+        if model_name is None:
+            model_name = Path(self.model_name)
+        else:
+            model_name = Path(model_name).with_suffix('.pt')
+        state_dict = torch.load(self.folder / model_name.name, lambda s, l: s)
         model.load_state_dict(state_dict, strict=False)
         return state_dict
 

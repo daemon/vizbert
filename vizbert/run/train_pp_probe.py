@@ -142,7 +142,7 @@ def main():
     if args.eval_only:
         with injector:
             trainer.evaluate(trainer.dev_loader, 'Dev')
-            trainer.evaluate(trainer.test_loader, 'Dev')
+            trainer.evaluate(trainer.test_loader, 'Test')
     else:
         with injector:
             trainer.train(test=args.dataset != 'sst2')

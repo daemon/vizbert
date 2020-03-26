@@ -95,14 +95,14 @@ class ModelTrainer(object):
                     do_exit = True
                 if do_exit:
                     break
-            if do_exit:
-                break
             dev_losses = self.evaluate(self.dev_loader, header=epoch_idx + 1)
             if self.scheduler is not None:
                 self.scheduler.step(dev_losses[LOSS_KEY])
             for loss_name, value in dev_losses.items():
                 self.workspace.summary_writer.add_scalar(f'Dev/{loss_name.capitalize()}', value, epoch_idx)
             self.workspace.save_model(self.model)
+            if do_exit:
+                break
         if test:
             test_losses = self.evaluate(self.test_loader, header='Test')
             for loss_name, value in test_losses.items():

@@ -6,6 +6,8 @@ import torch.utils.data as tud
 import torch
 import pandas as pd
 
+from .metric import MetricDataset, METRIC_MAP, Metric
+
 
 __all__ = ['DataFrameDataset',
            'Sst2Workspace',
@@ -76,28 +78,6 @@ class ClassificationCollator(object):
         return LabeledTextBatch(token_ids, masks, raw_text, segment_ids, labels=torch.tensor(labels) if labels else None, multilabel=self.multilabel)
 
 
-class DataFrameDataset(tud.Dataset):
-
-    def __init__(self,
-                 dataframe: pd.DataFrame,
-                 num_labels: int,
-                 labeled: bool = False,
-                 multilabel: bool = False,
-                 label_map: Sequence[str] = None):
-        self.dataframe = dataframe
-        self.num_labels = num_labels
-        self.labeled = labeled
-        self.multilabel = multilabel
-        self.l2idx = label_map
-        self.idx2l = {v: k for v, k in enumerate(label_map)} if label_map else None
-
-    def __len__(self):
-        return len(self.dataframe)
-
-    def __getitem__(self, idx):
-        return self.dataframe.loc[idx]
-
-
 @dataclass
 class Sst2Workspace(object):
     folder: Path
@@ -111,8 +91,38 @@ class Sst2Workspace(object):
             else:
                 df.columns = [INDEX_COLUMN, SENTENCE1_COLUMN]
                 labeled = False
-            return DataFrameDataset(df, num_labels=2, labeled=labeled)
+            return DataFrameDataset(df, num_labels=2, labeled=labeled, metrics=('accuracy',))
         return [load(str(self.folder / f'{set_type}.tsv'), set_type) for set_type in splits]
+
+
+class DataFrameDataset(tud.Dataset, MetricDataset):
+
+    def __init__(self,
+                 dataframe: pd.DataFrame,
+                 num_labels: int,
+                 labeled: bool = False,
+                 multilabel: bool = False,
+                 label_map: Sequence[str] = None,
+                 metrics: Sequence[str] = None):
+        self.dataframe = dataframe
+        self.num_labels = num_labels
+        self.labeled = labeled
+        self.multilabel = multilabel
+        self.l2idx = label_map
+        self.idx2l = {v: k for v, k in enumerate(label_map)} if label_map else None
+        if metrics is None:
+            metrics = []
+        self._metrics = [METRIC_MAP[x] for x in metrics]
+
+    @property
+    def metrics(self) -> Sequence[Metric]:
+        return self._metrics
+
+    def __len__(self):
+        return len(self.dataframe)
+
+    def __getitem__(self, idx):
+        return self.dataframe.loc[idx]
 
 
 @dataclass
@@ -123,7 +133,7 @@ class ReutersWorkspace(object):
         def load(filename):
             df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, header=None, dtype=str)
             df.columns = [LABEL_COLUMN, SENTENCE1_COLUMN]
-            return DataFrameDataset(df, num_labels=90, labeled=True, multilabel=True)
+            return DataFrameDataset(df, num_labels=90, labeled=True, multilabel=True, metrics=('recall', 'precision'))
         return [load(str(self.folder / f'{set_type}.tsv')) for set_type in splits]
 
 
@@ -135,7 +145,7 @@ class AapdWorkspace(object):
         def load(filename):
             df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, dtype=str)
             df.columns = [SENTENCE1_COLUMN, LABEL_COLUMN, LABEL_NAMES_COLUMN]
-            return DataFrameDataset(df, num_labels=54, labeled=True, multilabel=True, label_map=idx2l)
+            return DataFrameDataset(df, num_labels=54, labeled=True, multilabel=True, label_map=idx2l, metrics=('recall', 'precision'))
         idx2l = []
         with open(str(self.folder / 'labels.csv')) as f:
             for idx, line in enumerate(f.readlines()):
@@ -150,7 +160,7 @@ class ImdbWorkspace(object):
 
     def load_splits(self, splits=('train', 'dev', 'test')):
         def load(filename):
-            df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, header=None, dtype=str)
+            df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, header=None, dtype=str, metrics=('accuracy',))
             df.columns = [LABEL_COLUMN, SENTENCE1_COLUMN]
             df[LABEL_COLUMN] = list(map(lambda x: x.index('1'), df[LABEL_COLUMN]))
             return DataFrameDataset(df, num_labels=10, labeled=True, multilabel=False)
@@ -163,7 +173,7 @@ class Sst5Workspace(object):
 
     def load_splits(self, splits=('train', 'dev', 'test')):
         def load(filename):
-            df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, header=None, dtype=str)
+            df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, header=None, dtype=str, metrics=('accuracy',))
             df.columns = [LABEL_COLUMN, SENTENCE1_COLUMN]
             df[LABEL_COLUMN] = list(map(int, df[LABEL_COLUMN]))
             return DataFrameDataset(df, num_labels=5, labeled=True, multilabel=False)

@@ -41,10 +41,7 @@ def main():
             num_nnz_scores = (scores > 0).float().sum(-1)
             num_nnz_scores[num_nnz_scores == 0] = 1
             ret['precision'] = ((scores > 0) & (labels > 0)).float().sum(-1) / num_nnz_scores
-            ret['f1'] = (2 * (ret['recall'] * ret['precision']) / (ret['precision'] + ret['recall']))
-            ret['f1'][torch.isnan(ret['f1'])] = 0
             ret['recall'] = ret['recall'].mean()
-            ret['f1'] = ret['f1'].mean()
             ret['precision'] = ret['precision'].mean()
             if token_ids.size(0) == 0:
                 ret['precision'].zero_()
@@ -74,6 +71,7 @@ def main():
                  OptionEnum.USE_ZMT,
                  OptionEnum.LAYER_IDX.required(False),
                  opt('--probe-path', type=Path),
+                 opt('--opt-limit', type=int),
                  opt('--tune-probe-weights', action='store_true'),
                  opt('--max-seq-len', '-msl', type=int, default=128),
                  opt('--num-warmup-steps', '-nws', type=int, default=0),
@@ -89,14 +87,16 @@ def main():
         if args.use_zmt:
             zmt = ZeroMeanTransform(768, 2)
             probe.zmt = zmt
-        pws.load_model(probe)
+        try:
+            pws.load_model(probe)
+        except:
+            pass
         # w = torch.load('svd.pt')
         # with torch.no_grad():
         #     probe.probe_params[0].set_(torch.from_numpy(w)[0])
         #     probe.probe_params[1].set_(torch.from_numpy(w)[1])
         probe.to(args.device)
         hooks.append(BertHiddenLayerInjectionHook(probe, args.layer_idx - 1))
-    injector = ModelInjector(model.bert, hooks=hooks)
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     dws = DATA_WORKSPACE_CLASSES[args.task](args.data_folder)
@@ -116,36 +116,42 @@ def main():
     config.num_labels = datasets[0].num_labels
     model = AutoModelForSequenceClassification.from_pretrained(args.model, config=config)
     model.to(args.device)
+    injector = ModelInjector(model.bert, hooks=hooks)
 
     if args.load_weights:
         tws.load_model(model)
 
-    # Prepare optimizer and schedule (linear warmup and decay)
-    no_decay = ['bias', 'LayerNorm.weight']
-    optimizer_grouped_parameters = [
-        {
-            'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)]
-        },
-        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0},
-    ]
-    optimizer = AdamW(optimizer_grouped_parameters, lr=args.lr, eps=1e-8)
+    if args.tune_probe_weights:
+        optimizer = AdamW(list(filter(lambda x: x.requires_grad, probe.parameters())), lr=args.lr, eps=1e-8)
+    else:
+        # Prepare optimizer and schedule (linear warmup and decay)
+        no_decay = ['bias', 'LayerNorm.weight']
+        optimizer_grouped_parameters = [
+            {
+                'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)]
+            },
+            {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0},
+        ]
+        optimizer = AdamW(optimizer_grouped_parameters, lr=args.lr, eps=1e-8)
     t_total = len(loaders[0]) * args.num_epochs
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args.num_warmup_steps, num_training_steps=t_total)
     criterion = ClassificationLoss(multilabel=datasets[0].multilabel)
 
     trainer = ModelTrainer(loaders,
-                           model,
+                           probe if args.tune_probe_weights else model,
                            tws,
                            optimizer,
                            args.num_epochs,
                            scheduler=scheduler,
-                           train_feed_loss_callback=feeder)
+                           train_feed_loss_callback=feeder,
+                           optimization_limit=args.opt_limit)
     with injector:
         if args.eval_only:
             trainer.evaluate(trainer.dev_loader, header='Dev')
-            trainer.evaluate(trainer.test_loader, header='Test')
+            if datasets[2].labeled:
+                trainer.evaluate(trainer.test_loader, header='Test')
         else:
-            trainer.train()
+            trainer.train(test=datasets[2].labeled)
 
 
 if __name__ == '__main__':
