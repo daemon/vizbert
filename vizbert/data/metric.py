@@ -31,6 +31,16 @@ class Metric(object):
         return self._evaluate(scores, gold)
 
 
+class MccMetric(Metric, name='mcc'):
+
+    def _evaluate(self, scores: torch.Tensor, gold: torch.Tensor):
+        tp = ((scores.max(1)[1] == 1) & (gold == 1)).float().sum()
+        tn = ((scores.max(1)[1] == 0) & (gold == 0)).float().sum()
+        fp = ((scores.max(1)[1] == 1) & (gold == 0)).float().sum()
+        fn = ((scores.max(1)[1] == 0) & (gold == 1)).float().sum()
+        return (tp * tn - fp * fn) / ((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)).sqrt()
+
+
 class AccuracyMetric(Metric, name='accuracy'):
 
     def _evaluate(self, scores: torch.Tensor, gold: torch.Tensor):
@@ -47,6 +57,9 @@ class PrecisionMetric(Metric, name='precision'):
 
     def _evaluate(self, scores: torch.Tensor, gold: torch.Tensor):
         num_nnz_scores = (scores > 0).float().sum(-1)
-        num_nnz_scores[num_nnz_scores == 0] = 1
-        prec = ((scores > 0) & (gold > 0)).float().sum(-1) / num_nnz_scores
+        if num_nnz_scores.sum().item() == 0:
+            return torch.zeros(1).to(scores.device)
+        scores = scores[num_nnz_scores > 0]
+        gold = gold[num_nnz_scores > 0]
+        prec = ((scores > 0) & (gold > 0)).float().sum(-1) / num_nnz_scores[num_nnz_scores > 0].sum(-1)
         return prec.mean()
