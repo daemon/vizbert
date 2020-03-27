@@ -38,10 +38,14 @@ class ModelTrainer(object):
             self.test_feed_loss_callback = self.train_feed_loss_callback
         self.training = True
         self.step_no = 0
+        self.callbacks = []
 
     @property
     def train_loader(self):
         return self.loaders[0]
+
+    def post_callbacks(self, *callbacks):
+        self.callbacks.extend(callbacks)
 
     @property
     def dev_loader(self):
@@ -91,6 +95,9 @@ class ModelTrainer(object):
                 self.optimizer.step()
                 self.step_no += 1
                 pbar.set_postfix(dict(loss=f'{loss.item():.3}'))
+                for cb in self.callbacks:
+                    cb()
+                self.callbacks.clear()
                 if self.step_no == self.optimization_limit:
                     do_exit = True
                 if do_exit:

@@ -67,3 +67,5 @@ class OptionEnum(enum.Enum):
     EVAL_ONLY = opt('--eval-only', action='store_true')
     USE_ZMT = opt('--use-zmt', action='store_true')
     OPTIMIZE_MEAN = opt('--optimize-mean', action='store_true')
+    EVAL_BATCH_SIZE = opt('--eval-batch-size', default=16, type=int)
+    DATASET = opt('--dataset', '-d', type=str, default='conll', choices=['conll', 'sst2', 'reuters', 'sst5', 'aapd', 'cola'])

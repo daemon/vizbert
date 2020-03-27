@@ -1,12 +1,14 @@
 from pathlib import Path
+from typing import Sequence
 
 from transformers import AutoConfig, AutoTokenizer, AutoModelForSequenceClassification, AdamW, get_linear_schedule_with_warmup
 import torch.utils.data as tud
 import torch
 
 from .args import ArgumentParserBuilder, OptionEnum, opt
-from vizbert.data import DATA_WORKSPACE_CLASSES, ClassificationCollator, TrainingWorkspace, LabeledTextBatch, ZeroMeanTransform
-from vizbert.inject import ModelInjector, ProbeDirectionRemovalModule, BertHiddenLayerInjectionHook
+from vizbert.data import DATA_WORKSPACE_CLASSES, ClassificationCollator, TrainingWorkspace, LabeledTextBatch, ZeroMeanTransform,\
+    DataFrameDataset
+from vizbert.inject import ModelInjector, BertHiddenLayerInjectionHook
 from vizbert.model import ModelTrainer, LOSS_SIZE_KEY, LOSS_KEY, ClassificationLoss, ProjectionPursuitProbe
 
 
@@ -34,24 +36,9 @@ def main():
         model.zero_grad()
         ret = {LOSS_KEY: loss,
                LOSS_SIZE_KEY: token_ids.size(0)}
+        ret.update(datasets[0].evaluate_metrics(scores, labels))
         if trainer.training:
-            scheduler.step()
-        if batch.multilabel:
-            ret['recall'] = ((scores > 0) & (labels > 0)).float().sum(-1) / labels.float().sum(-1)
-            num_nnz_scores = (scores > 0).float().sum(-1)
-            num_nnz_scores[num_nnz_scores == 0] = 1
-            ret['precision'] = ((scores > 0) & (labels > 0)).float().sum(-1) / num_nnz_scores
-            ret['recall'] = ret['recall'].mean()
-            ret['precision'] = ret['precision'].mean()
-            if token_ids.size(0) == 0:
-                ret['precision'].zero_()
-                ret['f1'].zero_()
-                ret['recall'].zero_()
-        else:
-            if token_ids.size(0) == 0:
-                ret['accuracy'] = torch.zeros(1).to(token_ids.device)
-            else:
-                ret['accuracy'] = (scores.max(-1)[1] == labels).float().mean()
+            trainer.post_callbacks(scheduler.step)
         return ret
 
     apb = ArgumentParserBuilder()
@@ -59,6 +46,7 @@ def main():
                  OptionEnum.LR.default(5e-5),
                  OptionEnum.OPTIMIZE_MEAN,
                  OptionEnum.BATCH_SIZE.default(32),
+                 OptionEnum.EVAL_BATCH_SIZE,
                  OptionEnum.TASK,
                  OptionEnum.NUM_EPOCHS.default(3),
                  OptionEnum.WORKSPACE,
@@ -100,17 +88,19 @@ def main():
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     dws = DATA_WORKSPACE_CLASSES[args.task](args.data_folder)
-    datasets = dws.load_splits()
+    datasets = dws.load_splits()  # type: Sequence[DataFrameDataset]
     tws = TrainingWorkspace(args.workspace)
+    tws.write_args(args)
     collator = ClassificationCollator(tokenizer,
                                       multilabel=datasets[0].multilabel,
                                       max_length=args.max_seq_len)
     loaders = [tud.DataLoader(ds,
-                              batch_size=args.batch_size,
+                              batch_size=bsz,
                               shuffle=do_shuffle,
                               num_workers=args.num_workers,
                               collate_fn=collator,
-                              pin_memory=True) for ds, do_shuffle in zip(datasets, (True, False, False))]
+                              pin_memory=True) for ds, do_shuffle, bsz in
+               zip(datasets, (True, False, False), (args.batch_size, args.eval_batch_size, args.eval_batch_size))]
 
     config = AutoConfig.from_pretrained(args.model)
     config.num_labels = datasets[0].num_labels

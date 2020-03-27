@@ -29,11 +29,11 @@ def main():
                  OptionEnum.OUTPUT_FOLDER,
                  OptionEnum.USE_ZMT,
                  OptionEnum.OPTIMIZE_MEAN,
+                 OptionEnum.DATASET,
                  opt('--project-type', type=str, choices=['pca', 'probe', 'tsne', 'svd'], default='probe'),
                  opt('--load-weights', type=str),
                  opt('--no-basic-tokenize', action='store_false', dest='basic_tokenize'),
-                 opt('--limit', type=int, default=30),
-                 opt('--dataset', '-d', type=str, default='conll', choices=['conll', 'sst2', 'reuters', 'aapd', 'sst5']))
+                 opt('--limit', type=int, default=30))
     args = apb.parser.parse_args()
 
     tok_config = {}
@@ -141,9 +141,14 @@ def main():
                 coeffs = batch_gs_coeffs(proj_matrix, data).squeeze().cpu().numpy().T  # sequence, coeff
             coeffs_lst.append(coeffs)
             tokens_lst.extend([tokenizer.convert_ids_to_tokens(x) for x in batch.token_ids[0].tolist()])
-            if idx == args.limit:
+            if idx == args.limit - 1:
                 break
-    coeffs = np.concatenate(coeffs_lst, 1)
+    if args.probe_rank > 1:
+        coeffs = np.concatenate(coeffs_lst, 1)
+    else:
+        args.probe_rank = 2
+        coeffs = np.concatenate(coeffs_lst, 0)
+        coeffs = np.vstack((coeffs, np.random.uniform(-1, 1, coeffs.shape[0])))
     for i in range(args.probe_rank - 1):
         for j in range(i + 1, args.probe_rank):
             fig, ax = plt.subplots(figsize=(12, 8))

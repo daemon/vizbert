@@ -1,14 +1,15 @@
 from dataclasses import dataclass
 from pathlib import Path
+import argparse
 import json
 import shutil
-import sys
 
 from torch.utils.tensorboard import SummaryWriter
 import torch
 
-from .classification import Sst2Workspace, ReutersWorkspace, ImdbWorkspace, AapdWorkspace, Sst5Workspace
+from .classification import Sst2Workspace, ReutersWorkspace, ImdbWorkspace, AapdWorkspace, Sst5Workspace, ColaWorkspace
 from vizbert.data import ConllDataset
+from vizbert.utils import JSON_PRIMITIVES
 
 
 __all__ = ['ConllWorkspace', 'TrainingWorkspace', 'DATA_WORKSPACE_CLASSES']
@@ -62,8 +63,12 @@ class TrainingWorkspace(object):
         except:
             pass
         self.summary_writer = SummaryWriter(str(self.log_path))
+
+    def write_args(self, args: argparse.Namespace):
+        cli_dict = {k: repr(v) if type(v)
+                                  not in JSON_PRIMITIVES else v for k, v in vars(args).items()}
         with open(str(self.folder / self.cli_name), 'w') as f:
-            json.dump(sys.argv, f, indent=4)
+            json.dump(cli_dict, f, indent=4)
 
     def save_model(self, model: torch.nn.Module, model_name=None):
         if model_name is None:
@@ -87,4 +92,5 @@ DATA_WORKSPACE_CLASSES = dict(conll=ConllWorkspace,
                               sst2=Sst2Workspace,
                               imdb=ImdbWorkspace,
                               aapd=AapdWorkspace,
-                              sst5=Sst5Workspace)
+                              sst5=Sst5Workspace,
+                              cola=ColaWorkspace)
