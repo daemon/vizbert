@@ -16,6 +16,7 @@ __all__ = ['DataFrameDataset',
            'LabeledTextBatch',
            'ImdbWorkspace',
            'AapdWorkspace',
+           'ColaWorkspace',
            'Sst5Workspace']
 
 INDEX_COLUMN = 'index'
@@ -79,6 +80,24 @@ class ClassificationCollator(object):
 
 
 @dataclass
+class ColaWorkspace(object):
+    folder: Path
+
+    def load_splits(self, splits=('train', 'dev', 'test')):
+        def load(filename, set_type):
+            use_header = dict(header=None) if set_type in {'dev', 'train'} else {}
+            df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, **use_header)
+            if set_type in {'dev', 'train'}:
+                df.columns = ['unused1', LABEL_COLUMN, 'unused2', SENTENCE1_COLUMN]
+                labeled = True
+            else:
+                df.columns = [INDEX_COLUMN, SENTENCE1_COLUMN]
+                labeled = False
+            return DataFrameDataset(df, num_labels=2, labeled=labeled, metrics=('mcc', 'accuracy'))
+        return [load(str(self.folder / f'{set_type}.tsv'), set_type) for set_type in splits]
+
+
+@dataclass
 class Sst2Workspace(object):
     folder: Path
 
@@ -112,7 +131,7 @@ class DataFrameDataset(tud.Dataset, MetricDataset):
         self.idx2l = {v: k for v, k in enumerate(label_map)} if label_map else None
         if metrics is None:
             metrics = []
-        self._metrics = [METRIC_MAP[x] for x in metrics]
+        self._metrics = [METRIC_MAP[x]() for x in metrics]
 
     @property
     def metrics(self) -> Sequence[Metric]:
@@ -173,8 +192,8 @@ class Sst5Workspace(object):
 
     def load_splits(self, splits=('train', 'dev', 'test')):
         def load(filename):
-            df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, header=None, dtype=str, metrics=('accuracy',))
+            df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, header=None, dtype=str)
             df.columns = [LABEL_COLUMN, SENTENCE1_COLUMN]
             df[LABEL_COLUMN] = list(map(int, df[LABEL_COLUMN]))
-            return DataFrameDataset(df, num_labels=5, labeled=True, multilabel=False)
+            return DataFrameDataset(df, num_labels=5, labeled=True, multilabel=False, metrics=('accuracy',))
         return [load(str(self.folder / f'stsa.fine.{set_type}')) for set_type in splits]
