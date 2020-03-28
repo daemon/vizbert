@@ -57,6 +57,7 @@ def main():
                  OptionEnum.USE_ZMT,
                  OptionEnum.OPTIMIZE_MEAN,
                  OptionEnum.DATASET,
+                 OptionEnum.MAX_SEQ_LEN,
                  opt('--opt-limit', type=int),
                  opt('--zmt-limit', type=int, default=1000),
                  opt('--load-probe', action='store_true'),
@@ -107,7 +108,7 @@ def main():
     if args.dataset == 'conll':
         collator = ConllTextCollator(tokenizer)
     else:
-        collator = ClassificationCollator(tokenizer, max_length=128, multilabel=dev_ds.multilabel)
+        collator = ClassificationCollator(tokenizer, max_length=args.max_seq_len, multilabel=dev_ds.multilabel)
     train_loader = tud.DataLoader(train_ds, batch_size=args.batch_size, pin_memory=True, collate_fn=collator, shuffle=True, num_workers=args.num_workers)
     dev_loader = tud.DataLoader(dev_ds, batch_size=args.batch_size, pin_memory=True, collate_fn=collator, num_workers=args.num_workers)
     test_loader = tud.DataLoader(test_ds, batch_size=args.batch_size, pin_memory=True, collate_fn=collator, num_workers=args.num_workers)

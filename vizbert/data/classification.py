@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Sequence
 
@@ -17,7 +18,9 @@ __all__ = ['DataFrameDataset',
            'ImdbWorkspace',
            'AapdWorkspace',
            'ColaWorkspace',
-           'Sst5Workspace']
+           'Sst5Workspace',
+           'MismatchedMnliWorkspace',
+           'MatchedMnliWorkspace']
 
 INDEX_COLUMN = 'index'
 SENTENCE1_COLUMN = 'sentence1'
@@ -66,6 +69,8 @@ class ClassificationCollator(object):
             token_ids.append(enc)
             masks.append([1] * len(enc))
             raw_text.append(ex[SENTENCE1_COLUMN])
+            if SENTENCE2_COLUMN in ex:
+                raw_text[-1] = f'{raw_text[-1]}\t{ex[SENTENCE2_COLUMN]}'
             segment_ids.append(tt_ids)
             if LABEL_COLUMN in ex:
                 if self.multilabel:
@@ -197,3 +202,31 @@ class Sst5Workspace(object):
             df[LABEL_COLUMN] = list(map(int, df[LABEL_COLUMN]))
             return DataFrameDataset(df, num_labels=5, labeled=True, multilabel=False, metrics=('accuracy',))
         return [load(str(self.folder / f'stsa.fine.{set_type}')) for set_type in splits]
+
+
+@dataclass
+class MnliWorkspace(object):
+    folder: Path
+    matched: bool = False
+
+    def load_splits(self, splits=('train', 'dev', 'test')):
+        def load(filename, set_type):
+            df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, dtype=str, na_filter=False)
+            cols = [INDEX_COLUMN, 'uu1', 'uu2', 'uu3', 'uu4', 'uu5', 'uu6', 'uu7', SENTENCE1_COLUMN,
+                    SENTENCE2_COLUMN]
+            if 'train' in set_type:
+                cols.extend(['uu8', LABEL_COLUMN])
+            elif 'dev' in set_type:
+                cols.extend(['uu8', 'uu9', 'uu10', 'uu11', 'uu12', LABEL_COLUMN])
+            df.columns = cols
+            if 'test' not in set_type:
+                df[LABEL_COLUMN] = list(map(label_map.__getitem__, df[LABEL_COLUMN]))
+            return DataFrameDataset(df, num_labels=3, labeled='test' not in set_type, multilabel=False, metrics=('accuracy',))
+
+        label_map = dict(contradiction=0, neutral=2, entailment=1)
+        splits = [s if s == 'train' else f'{s}_{"" if self.matched else "mis"}matched' for s in splits]
+        return [load(str(self.folder / f'{set_type}.tsv'), set_type) for set_type in splits]
+
+
+MatchedMnliWorkspace = partial(MnliWorkspace, matched=True)
+MismatchedMnliWorkspace = partial(MnliWorkspace, matched=False)

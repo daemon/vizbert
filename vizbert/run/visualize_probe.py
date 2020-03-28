@@ -124,6 +124,7 @@ def main():
         coeffs_lst = []
         tokens_lst = []
         for idx, batch in enumerate(dev_loader):
+            print(batch.raw_text[0], batch.labels[0])
             scores = model(batch.token_ids.to(args.device), attention_mask=batch.attention_mask.to(args.device))
             # scores = scores[0].softmax(1)[0]
             # colors = [(scores[0].item(), scores[1].item(), 0.0)] * batch.token_ids.size(1)

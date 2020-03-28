@@ -10,6 +10,7 @@ from vizbert.data import DATA_WORKSPACE_CLASSES, ClassificationCollator, Trainin
     DataFrameDataset
 from vizbert.inject import ModelInjector, BertHiddenLayerInjectionHook
 from vizbert.model import ModelTrainer, LOSS_SIZE_KEY, LOSS_KEY, ClassificationLoss, ProjectionPursuitProbe
+from vizbert.utils import expand_bert_classifier
 
 
 def main():
@@ -47,7 +48,7 @@ def main():
                  OptionEnum.OPTIMIZE_MEAN,
                  OptionEnum.BATCH_SIZE.default(32),
                  OptionEnum.EVAL_BATCH_SIZE,
-                 OptionEnum.TASK,
+                 OptionEnum.DATASET,
                  OptionEnum.NUM_EPOCHS.default(3),
                  OptionEnum.WORKSPACE,
                  OptionEnum.PROBE_RANK.required(False),
@@ -58,10 +59,11 @@ def main():
                  OptionEnum.EVAL_ONLY,
                  OptionEnum.USE_ZMT,
                  OptionEnum.LAYER_IDX.required(False),
+                 OptionEnum.MAX_SEQ_LEN,
+                 opt('--expand-labels', type=int),
                  opt('--probe-path', type=Path),
                  opt('--opt-limit', type=int),
                  opt('--tune-probe-weights', action='store_true'),
-                 opt('--max-seq-len', '-msl', type=int, default=128),
                  opt('--num-warmup-steps', '-nws', type=int, default=0),
                  opt('--filter-labels', type=int, nargs='+', default=[]),
                  opt('--invert-filter', action='store_true'))
@@ -87,7 +89,7 @@ def main():
         hooks.append(BertHiddenLayerInjectionHook(probe, args.layer_idx - 1))
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
-    dws = DATA_WORKSPACE_CLASSES[args.task](args.data_folder)
+    dws = DATA_WORKSPACE_CLASSES[args.dataset](args.data_folder)
     datasets = dws.load_splits()  # type: Sequence[DataFrameDataset]
     tws = TrainingWorkspace(args.workspace)
     tws.write_args(args)
@@ -110,6 +112,8 @@ def main():
 
     if args.load_weights:
         tws.load_model(model)
+    if args.expand_labels:
+        expand_bert_classifier(model, args.expand_labels)
 
     if args.tune_probe_weights:
         optimizer = AdamW(list(filter(lambda x: x.requires_grad, probe.parameters())), lr=args.lr, eps=1e-8)
