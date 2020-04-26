@@ -8,9 +8,14 @@ METRIC_MAP = {}
 
 class MetricDataset(object):
 
+    def __init__(self, metrics=None):
+        if metrics is None:
+            metrics = []
+        self._metrics = [METRIC_MAP[x]() for x in metrics]
+
     @property
     def metrics(self) -> Sequence['Metric']:
-        raise NotImplementedError
+        return self._metrics
 
     def evaluate_metrics(self, scores, labels):
         return {x.name: x.evaluate(scores, labels) for x in self.metrics}

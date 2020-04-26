@@ -13,7 +13,8 @@ __all__ = ['sparse_vstack',
            'batch_gs',
            'full_batch_gs',
            'orth_tensor',
-           'batch_gs_coeffs']
+           'batch_gs_coeffs',
+           'full_batch_proj']
 
 
 def sparse_vstack(sparse_matrices):
@@ -36,7 +37,7 @@ def batch_gs_coeffs(A, x):
     return torch.stack(coeffs, 2)
 
 
-def batch_gs(q: torch.Tensor, x: torch.Tensor, strength=1):
+def batch_gs(q: torch.Tensor, x: torch.Tensor, strength=1, inverse=False):
     """Applies one step of the (modified) Gram-Schmidt process to a batch of sequence-level vectors.
 
     :param q: the orthogonal vector.
@@ -45,16 +46,23 @@ def batch_gs(q: torch.Tensor, x: torch.Tensor, strength=1):
     :return: the batch subtracted by its projection onto the orthogonal vector.
     """
     v = torch.einsum('i,bsi->bs', q, x)
-    v = v / q.dot(q)
+    # v = v / q.dot(q)
     q = q.unsqueeze(0).unsqueeze(0).expand_as(x)
     v = v.unsqueeze(-1).expand_as(q)
-    return x - strength * v * q
+    if inverse:
+        return v * q
+    else:
+        return x - strength * v * q
 
 
 def full_batch_gs(Q: torch.Tensor, x: torch.Tensor):
     for q in Q.t():
         x = batch_gs(q, x)
     return x
+
+
+def full_batch_proj(Q: torch.Tensor, x: torch.Tensor):
+    return torch.einsum('om,mn,bsn->bso', Q, Q.t(), x)
 
 
 def _gs1(u: torch.Tensor, v: torch.Tensor, eps: float = 1e-7):
@@ -68,13 +76,9 @@ def _gs1(u: torch.Tensor, v: torch.Tensor, eps: float = 1e-7):
     return v / (v.norm() + eps)
 
 
-def orth_tensor(A: torch.Tensor, eps: float = 1e-7):
-    hiddens = []
-    for v in A.t():
-        for hid in hiddens:
-            v = _gs1(hid, v)
-        hiddens.append(v / (v.norm() + eps))
-    return torch.stack(hiddens, 1)
+def orth_tensor(A: torch.Tensor):
+    U, _, _ = A.svd()
+    return U
 
 
 def orth_compl(A: np.ndarray):

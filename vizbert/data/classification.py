@@ -1,13 +1,16 @@
 from dataclasses import dataclass
 from functools import partial
+from itertools import chain
 from pathlib import Path
 from typing import Sequence
+import re
 
+from transformers import PreTrainedTokenizer
 import torch.utils.data as tud
 import torch
 import pandas as pd
 
-from .metric import MetricDataset, METRIC_MAP, Metric
+from .metric import MetricDataset
 
 
 __all__ = ['DataFrameDataset',
@@ -20,13 +23,18 @@ __all__ = ['DataFrameDataset',
            'ColaWorkspace',
            'Sst5Workspace',
            'MismatchedMnliWorkspace',
-           'MatchedMnliWorkspace']
+           'MatchedMnliWorkspace',
+           'CleanedImdbDytangWorkspace',
+           'ImdbDytangWorkspace',
+           'CleanedImdbWorkspace',
+           'SENTENCE_SEPARATOR']
 
 INDEX_COLUMN = 'index'
 SENTENCE1_COLUMN = 'sentence1'
 SENTENCE2_COLUMN = 'sentence2'
 LABEL_COLUMN = 'label'
 LABEL_NAMES_COLUMN = 'label_names'
+SENTENCE_SEPARATOR = '<sssss>'
 
 
 @dataclass
@@ -49,10 +57,17 @@ class LabeledTextBatch(object):
 
 class ClassificationCollator(object):
 
-    def __init__(self, tokenizer, multilabel=False, max_length=128):
+    def __init__(self,
+                 tokenizer: PreTrainedTokenizer,
+                 multilabel=False,
+                 max_length=128,
+                 presplit=False):
         self.tokenizer = tokenizer
+        if presplit:
+            self.tokenizer.do_basic_tokenize = False
         self.multilabel = multilabel
         self.max_length = max_length
+        self.presplit = presplit
 
     def __call__(self, examples: Sequence[pd.DataFrame]):
         token_ids = []
@@ -61,8 +76,9 @@ class ClassificationCollator(object):
         labels = []
         segment_ids = []
         for ex in examples:
-            dd = self.tokenizer.encode_plus(ex[SENTENCE1_COLUMN],
-                                            text_pair=ex[SENTENCE2_COLUMN] if SENTENCE2_COLUMN in ex else None,
+            dd = self.tokenizer.encode_plus(ex[SENTENCE1_COLUMN].replace(f' {SENTENCE_SEPARATOR}', ''),
+                                            text_pair=ex[SENTENCE2_COLUMN].replace(f' {SENTENCE_SEPARATOR}', '') \
+                                                if SENTENCE2_COLUMN in ex else None,
                                             max_length=self.max_length)
             enc = dd['input_ids']
             tt_ids = dd['token_type_ids']
@@ -119,7 +135,7 @@ class Sst2Workspace(object):
         return [load(str(self.folder / f'{set_type}.tsv'), set_type) for set_type in splits]
 
 
-class DataFrameDataset(tud.Dataset, MetricDataset):
+class DataFrameDataset(MetricDataset, tud.Dataset):
 
     def __init__(self,
                  dataframe: pd.DataFrame,
@@ -127,20 +143,16 @@ class DataFrameDataset(tud.Dataset, MetricDataset):
                  labeled: bool = False,
                  multilabel: bool = False,
                  label_map: Sequence[str] = None,
-                 metrics: Sequence[str] = None):
+                 metrics: Sequence[str] = None,
+                 presplit: bool = False):
+        MetricDataset.__init__(self, metrics)
         self.dataframe = dataframe
         self.num_labels = num_labels
         self.labeled = labeled
         self.multilabel = multilabel
         self.l2idx = label_map
         self.idx2l = {v: k for v, k in enumerate(label_map)} if label_map else None
-        if metrics is None:
-            metrics = []
-        self._metrics = [METRIC_MAP[x]() for x in metrics]
-
-    @property
-    def metrics(self) -> Sequence[Metric]:
-        return self._metrics
+        self.presplit = presplit
 
     def __len__(self):
         return len(self.dataframe)
@@ -178,17 +190,55 @@ class AapdWorkspace(object):
         return [load(str(self.folder / f'{set_type}.tsv')) for set_type in splits]
 
 
+class ImdbCleanerWorkspace(object):
+    double_space = re.compile(r'  +')
+    no_sssss = re.compile(r'\s<sssss>\s*$')
+
+    def __init__(self):
+        from .pattern import ImdbSpuriousMatcher
+        self.matcher = ImdbSpuriousMatcher()
+
+    def clean(self, text: str):
+        text = self.matcher.clean(text)
+        return self.no_sssss.sub('', self.double_space.sub('', text))
+
+
 @dataclass
-class ImdbWorkspace(object):
+class ImdbWorkspace(ImdbCleanerWorkspace):
     folder: Path
+    cleaned: bool = False
+
+    def __post_init__(self):
+        super().__init__()
 
     def load_splits(self, splits=('train', 'dev', 'test')):
         def load(filename):
-            df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, header=None, dtype=str, metrics=('accuracy',))
+            df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, header=None, dtype=str)
             df.columns = [LABEL_COLUMN, SENTENCE1_COLUMN]
             df[LABEL_COLUMN] = list(map(lambda x: x.index('1'), df[LABEL_COLUMN]))
-            return DataFrameDataset(df, num_labels=10, labeled=True, multilabel=False)
+            if self.cleaned:
+                df[SENTENCE1_COLUMN] = list(map(self.clean, df[SENTENCE1_COLUMN]))
+            return DataFrameDataset(df, num_labels=10, labeled=True, multilabel=False, metrics=('accuracy',))
         return [load(str(self.folder / f'{set_type}.tsv')) for set_type in splits]
+
+
+@dataclass
+class ImdbDytangWorkspace(ImdbCleanerWorkspace):
+    folder: Path
+    cleaned: bool = False
+
+    def __post_init__(self):
+        super().__init__()
+
+    def load_splits(self, splits=('train', 'dev', 'test')):
+        def load(filename):
+            df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, header=None, dtype=str)
+            df.columns = ['uu1', 'uu2', 'uu3', 'uu4', LABEL_COLUMN, 'uu5', SENTENCE1_COLUMN]
+            df[LABEL_COLUMN] = list(map(lambda x: int(x) - 1, df[LABEL_COLUMN]))
+            if self.cleaned:
+                df[SENTENCE1_COLUMN] = list(map(self.clean, df[SENTENCE1_COLUMN]))
+            return DataFrameDataset(df, num_labels=10, labeled=True, multilabel=False, presplit=True, metrics=('accuracy',))
+        return [load(str(self.folder / f'imdb.{set_type}.txt.ss')) for set_type in splits]
 
 
 @dataclass
@@ -230,3 +280,5 @@ class MnliWorkspace(object):
 
 MatchedMnliWorkspace = partial(MnliWorkspace, matched=True)
 MismatchedMnliWorkspace = partial(MnliWorkspace, matched=False)
+CleanedImdbDytangWorkspace = partial(ImdbDytangWorkspace, cleaned=True)
+CleanedImdbWorkspace = partial(ImdbWorkspace, cleaned=True)

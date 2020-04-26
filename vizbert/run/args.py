@@ -78,3 +78,4 @@ class OptionEnum(enum.Enum):
     EVAL_BATCH_SIZE = opt('--eval-batch-size', default=16, type=int)
     DATASET = opt('--dataset', '-d', type=str, choices_init=init_dataset_choices, required=True)
     MAX_SEQ_LEN = opt('--max-seq-len', '-msl', type=int, default=128)
+    INVERSE = opt('--inverse', action='store_true')

@@ -1,3 +1,4 @@
+from pathlib import Path
 import multiprocessing as mp
 
 from torch.optim import Adam
@@ -32,9 +33,8 @@ def main():
             gold_scores = model2(token_ids,
                                  attention_mask=batch.attention_mask.to(args.device),
                                  token_type_ids=batch.segment_ids.to(args.device))[0]
-        mask = torch.zeros_like(gold_scores)
-        mask[:, args.mask_classes] = 1
-        loss = criterion(recon_scores, gold_scores, mask.bool())
+        mask = torch.tensor(args.mask_classes).to(gold_scores.device) if args.mask_classes else None
+        loss = criterion(recon_scores, gold_scores, mask)
         l1_penalty = probe.l1_penalty(args.l1_penalty)
         loss += l1_penalty
         model.zero_grad()
@@ -58,14 +58,16 @@ def main():
                  OptionEnum.OPTIMIZE_MEAN,
                  OptionEnum.DATASET,
                  OptionEnum.MAX_SEQ_LEN,
+                 OptionEnum.INVERSE,
+                 opt('--no-mask-first', action='store_false', dest='mask_first'),
                  opt('--opt-limit', type=int),
                  opt('--zmt-limit', type=int, default=1000),
                  opt('--load-probe', action='store_true'),
-                 opt('--load-weights', type=str),
+                 opt('--load-weights', type=Path),
                  opt('--no-basic-tokenize', action='store_false', dest='basic_tokenize'),
                  opt('--num-features', type=int, default=768),
                  opt('--objective', type=str, default='concept', choices=['concept', 'entropy']),
-                 opt('--mask-classes', type=int, nargs='+'),
+                 opt('--mask-classes', type=int, nargs='+', default=[]),
                  opt('--l1-penalty', type=float, default=0),
                  opt('--mask-weight', type=float, default=1))
     args = apb.parser.parse_args()
@@ -84,12 +86,13 @@ def main():
         model = BertForSequenceClassification.from_pretrained(args.model, config=config).to(args.device)
         model2 = BertForSequenceClassification.from_pretrained(args.model, config=config).to(args.device)
     if args.load_weights:
-        model.load_state_dict(torch.load(args.load_weights))
-        model2.load_state_dict(torch.load(args.load_weights))
+        model.load_state_dict(torch.load(str(args.load_weights / 'model.pt')))
+        model2.load_state_dict(torch.load(str(args.load_weights / 'model.pt')))
     probe = ProjectionPursuitProbe(args.num_features,
                                    rank=args.probe_rank,
-                                   mask_first=args.dataset != 'conll',
-                                   optimize_mean=args.optimize_mean).to(args.device)
+                                   mask_first=args.mask_first,
+                                   optimize_mean=args.optimize_mean,
+                                   inverse=args.inverse).to(args.device)
     # probe.probe.data = torch.load('pca.pt')['b'].t().to(args.device)
     hook = BertHiddenLayerInjectionHook(probe, args.layer_idx - 1)
     injector = ModelInjector(model.bert, hooks=[hook])
@@ -103,7 +106,9 @@ def main():
     if 'bert' in args.model:
         tok_config['do_basic_tokenize'] = args.basic_tokenize
     tokenizer = AutoTokenizer.from_pretrained(args.model, **tok_config)
-    criterion = EntropyLoss() if args.objective == 'entropy' else MaskedConceptLoss(multilabel=dev_ds.multilabel, weight=args.mask_weight)
+    criterion = EntropyLoss() if args.objective == 'entropy' else MaskedConceptLoss(multilabel=dev_ds.multilabel,
+                                                                                    weight=args.mask_weight,
+                                                                                    inverse=args.inverse)
     feeder = entropy_feeder if args.objective == 'entropy' else classification_concept_loss_feeder
     if args.dataset == 'conll':
         collator = ConllTextCollator(tokenizer)

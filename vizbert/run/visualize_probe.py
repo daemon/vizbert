@@ -1,3 +1,4 @@
+from pathlib import Path
 import multiprocessing as mp
 
 from matplotlib import pyplot as plt
@@ -30,8 +31,9 @@ def main():
                  OptionEnum.USE_ZMT,
                  OptionEnum.OPTIMIZE_MEAN,
                  OptionEnum.DATASET,
+                 OptionEnum.INVERSE,
                  opt('--project-type', type=str, choices=['pca', 'probe', 'tsne', 'svd'], default='probe'),
-                 opt('--load-weights', type=str),
+                 opt('--load-weights', type=Path),
                  opt('--no-basic-tokenize', action='store_false', dest='basic_tokenize'),
                  opt('--limit', type=int, default=30))
     args = apb.parser.parse_args()
@@ -60,7 +62,7 @@ def main():
     else:
         model = BertForSequenceClassification.from_pretrained(args.model, num_labels=dev_ds.num_labels).to(args.device)
     if args.load_weights:
-        model.load_state_dict(torch.load(args.load_weights))
+        model.load_state_dict(torch.load(str(args.load_weights / 'model.pt')))
     reporting_module = ProbeReportingModule()
     hook = BertHiddenLayerInjectionHook(reporting_module, args.layer_idx - 1)
     injector = ModelInjector(model.bert, hooks=[hook])
@@ -72,7 +74,10 @@ def main():
     except:
         pass
 
-    probe = ProjectionPursuitProbe(768, args.probe_rank, optimize_mean=args.optimize_mean)
+    probe = ProjectionPursuitProbe(768,
+                                   args.probe_rank,
+                                   optimize_mean=args.optimize_mean,
+                                   inverse=args.inverse)
     if args.use_zmt:
         zmt = ZeroMeanTransform(768, 2).to(args.device)
         probe.zmt = zmt
@@ -124,7 +129,7 @@ def main():
         coeffs_lst = []
         tokens_lst = []
         for idx, batch in enumerate(dev_loader):
-            print(batch.raw_text[0], batch.labels[0])
+            # print(batch.raw_text[0], batch.labels[0])
             scores = model(batch.token_ids.to(args.device), attention_mask=batch.attention_mask.to(args.device))
             # scores = scores[0].softmax(1)[0]
             # colors = [(scores[0].item(), scores[1].item(), 0.0)] * batch.token_ids.size(1)

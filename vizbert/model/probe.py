@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 
 from vizbert.data import ZeroMeanTransform
-from vizbert.utils import orth_tensor, full_batch_gs
+from vizbert.utils import orth_tensor, full_batch_gs, full_batch_proj
 
 
 __all__ = ['InnerProductProbe', 'ProjectionPursuitProbe']
@@ -37,7 +37,8 @@ class ProjectionPursuitProbe(nn.Module):
                  orthogonalize=True,
                  mask_first=False,
                  zero_mean_transform: ZeroMeanTransform = None,
-                 optimize_mean: bool = False):
+                 optimize_mean: bool = False,
+                 inverse: bool = False):
         super().__init__()
         self.num_features = num_features
         if rank is None:
@@ -52,6 +53,10 @@ class ProjectionPursuitProbe(nn.Module):
         self.probe_ = [nn.Parameter(torch.empty(num_features, dtype=torch.float32).uniform_(-0.05, 0.05), requires_grad=True) for _ in range(rank)]
         self.probe_params = nn.ParameterList(self.probe_)
         self.orthogonalize = orthogonalize
+        self.inverse = inverse
+
+    def l1_penalty(self, weight):
+        return weight * self.probe_params[0].norm(p=1)
 
     def l1_penalty(self, weight):
         return weight * self.probe_params[0].norm(p=1)
@@ -73,7 +78,11 @@ class ProjectionPursuitProbe(nn.Module):
             old_norms = hidden_states.norm(dim=2).unsqueeze(-1)
         if self.mask_first:
             first_state = hidden_states[:, 0]
-        hidden_states = full_batch_gs(self.orth_probe if self.orthogonalize else self.probe, hidden_states)
+        probe = self.orth_probe if self.orthogonalize else self.probe
+        if self.inverse:
+            hidden_states = full_batch_proj(probe, hidden_states)
+        else:
+            hidden_states = full_batch_gs(probe, hidden_states)
         if self.normalize:
             norms = hidden_states.norm(dim=2).unsqueeze(-1)
             hidden_states = (hidden_states / norms) * old_norms

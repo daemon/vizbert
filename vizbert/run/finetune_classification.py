@@ -60,6 +60,8 @@ def main():
                  OptionEnum.USE_ZMT,
                  OptionEnum.LAYER_IDX.required(False),
                  OptionEnum.MAX_SEQ_LEN,
+                 OptionEnum.INVERSE,
+                 opt('--no-mask-first', action='store_false', dest='mask_first'),
                  opt('--expand-labels', type=int),
                  opt('--probe-path', type=Path),
                  opt('--opt-limit', type=int),
@@ -72,7 +74,11 @@ def main():
 
     hooks = []
     if args.probe_path:
-        probe = ProjectionPursuitProbe(768, args.probe_rank, mask_first=True, optimize_mean=args.optimize_mean)
+        probe = ProjectionPursuitProbe(768,
+                                       args.probe_rank,
+                                       mask_first=args.mask_first,
+                                       optimize_mean=args.optimize_mean,
+                                       inverse=args.inverse)
         pws = TrainingWorkspace(args.probe_path)
         if args.use_zmt:
             zmt = ZeroMeanTransform(768, 2)

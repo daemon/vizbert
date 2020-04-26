@@ -58,11 +58,12 @@ class ClassificationLoss(nn.Module):
 
 class MaskedConceptLoss(nn.Module):
 
-    def __init__(self, multilabel=False, weight=1):
+    def __init__(self, multilabel=False, weight=1, inverse=False):
         super().__init__()
         self.criterion = nn.L1Loss()  # TVD
         self.multilabel = multilabel
         self.weight = weight
+        self.inverse = inverse
 
     def _multilabel_op(self, x, gold=False):
         x = x.sigmoid()
@@ -73,13 +74,26 @@ class MaskedConceptLoss(nn.Module):
         return torch.stack((x, y), -1)
 
     def forward(self, scores: torch.Tensor, gold_scores: torch.Tensor, mask: torch.Tensor):
-        gold_scores[mask] = -1000
-        scores[mask] *= self.weight
+        if not self.inverse and mask is not None:
+            gold_scores[:, mask] = -1000
+        if mask is not None:
+            scores[:, mask] *= self.weight
         if self.multilabel:
             scores = scores.sigmoid()
             gold_scores = gold_scores.sigmoid()
         else:
             scores = scores.softmax(-1)
             gold_scores = gold_scores.softmax(-1)
+            if self.inverse and mask is not None:
+                mask_labels = set(mask.tolist())
+                inv_mask = list(filter(lambda x: x not in mask_labels, range(scores.size(1))))
+                inv_mask = torch.tensor(inv_mask).to(mask.device)
+                # masked_scores = scores[:, mask].sum(-1).unsqueeze(-1)
+                # masked_gold_scores = gold_scores[:, mask].sum(-1).unsqueeze(-1)
+                # o_scores = scores[:, inv_mask]
+                # o_gold_scores = gold_scores[:, inv_mask]
+                # scores = torch.cat((o_scores, masked_scores), 1)
+                # gold_scores = torch.cat((o_gold_scores, masked_gold_scores), 1)
+                gold_scores[:, inv_mask] = ((1 - gold_scores[:, mask].sum(-1)) / len(inv_mask)).unsqueeze(-1)
         tvd = 0.5 * self.criterion(scores, gold_scores)
         return tvd
