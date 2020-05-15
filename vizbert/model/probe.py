@@ -7,7 +7,7 @@ from vizbert.data import ZeroMeanTransform
 from vizbert.utils import orth_tensor, full_batch_gs, full_batch_proj
 
 
-__all__ = ['InnerProductProbe', 'ProjectionPursuitProbe']
+__all__ = ['InnerProductProbe', 'ProjectionPursuitProbe', 'LowRankProjectionTransform']
 
 
 class InnerProductProbe(nn.Module):
@@ -26,6 +26,22 @@ class InnerProductProbe(nn.Module):
         y = x.clone().permute(0, 2, 1, 3)
         z = x - y
         return torch.einsum('bijg,bijg->bij', z, z)
+
+
+class LowRankProjectionTransform(nn.Module):
+
+    def __init__(self, num_features: int, rank: int):
+        super().__init__()
+        self.probe_params_ = [nn.Parameter(torch.empty(num_features, dtype=torch.float32).uniform_(-0.05, 0.05),
+                                           requires_grad=True) for _ in range(rank)]
+        self.probe_params = nn.ParameterList(self.probe_params_)
+
+    @property
+    def orth_probe(self):
+        return orth_tensor(torch.stack(self.probe_params_, 1))
+
+    def forward(self, input: torch.Tensor):
+        return full_batch_proj(self.orth_probe, input)
 
 
 class ProjectionPursuitProbe(nn.Module):
@@ -54,9 +70,6 @@ class ProjectionPursuitProbe(nn.Module):
         self.probe_params = nn.ParameterList(self.probe_)
         self.orthogonalize = orthogonalize
         self.inverse = inverse
-
-    def l1_penalty(self, weight):
-        return weight * self.probe_params[0].norm(p=1)
 
     def l1_penalty(self, weight):
         return weight * self.probe_params[0].norm(p=1)

@@ -12,12 +12,18 @@ __all__ = ['ForwardWrapper',
 
 class ForwardWrapper(nn.Module):
 
-    def __init__(self, module: nn.Module, fn):
+    def __init__(self,
+                 module: nn.Module,
+                 fn,
+                 inside: bool = False):
         super().__init__()
         self.module = module
         self.fn = fn
+        self.fn_inside = inside
 
     def forward(self, *args, **kwargs):
+        if self.fn_inside:
+            return self.module(self.fn(*args), **kwargs)
         return self.fn(self.module(*args, **kwargs))
 
 

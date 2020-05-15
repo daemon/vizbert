@@ -1,5 +1,8 @@
+from abc import ABC, abstractmethod
+
 from scipy.linalg import orth
 from transformers import GPT2Model, BertModel
+from transformers.modeling_bert import BertLayer
 import torch
 import torch.nn as nn
 
@@ -11,7 +14,10 @@ __all__ = ['ProbeSubspaceNoiseModule',
            'Gpt2HiddenLayerInjectionHook',
            'ProbeDirectionRemovalModule',
            'BertHiddenLayerInjectionHook',
-           'ProbeReportingModule']
+           'ProbeReportingModule',
+           'BertAttentionMatrixKeyInjectionHook',
+           'BertAttentionMatrixValueInjectionHook',
+           'BertAttentionMatrixQueryInjectionHook']
 
 
 class ProbeSubspaceNoiseModule(nn.Module):
@@ -72,6 +78,38 @@ class ProbeReportingModule(nn.Module):
     def forward(self, hidden_states):
         self.buffer = hidden_states
         return hidden_states
+
+
+class BertAttentionMatrixInjectionHook(InjectionHook):
+    extract_type: str = None
+
+    def __init__(self, module: nn.Module, layer_idx: int):
+        self.module, self.layer_idx = module, layer_idx
+
+    def do_inject(self, model: BertModel):
+        self_attn = model.encoder.layer[self.layer_idx].attention.self
+        layer_module = getattr(self_attn, self.extract_type)
+        setattr(self_attn, self.extract_type, ForwardWrapper(layer_module, self.module, inside=True))
+
+    def do_eject(self, model: BertModel):
+        self_attn = model.encoder.layer[self.layer_idx].attention.self
+        setattr(self_attn, self.extract_type, getattr(self_attn, self.extract_type).module)
+
+    @property
+    def name(self):
+        return f'bert-layer-inject-attn-{self.extract_type}'
+
+
+class BertAttentionMatrixKeyInjectionHook(BertAttentionMatrixInjectionHook):
+    extract_type: str = 'key'
+
+
+class BertAttentionMatrixQueryInjectionHook(BertAttentionMatrixInjectionHook):
+    extract_type: str = 'query'
+
+
+class BertAttentionMatrixValueInjectionHook(BertAttentionMatrixInjectionHook):
+    extract_type: str = 'value'
 
 
 class BertHiddenLayerInjectionHook(InjectionHook):

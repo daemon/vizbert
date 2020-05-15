@@ -8,8 +8,9 @@ import torch
 from .args import ArgumentParserBuilder, OptionEnum, opt
 from vizbert.data import DATA_WORKSPACE_CLASSES, ClassificationCollator, TrainingWorkspace, LabeledTextBatch, ZeroMeanTransform,\
     DataFrameDataset
-from vizbert.inject import ModelInjector, BertHiddenLayerInjectionHook
-from vizbert.model import ModelTrainer, LOSS_SIZE_KEY, LOSS_KEY, ClassificationLoss, ProjectionPursuitProbe
+from vizbert.inject import ModelInjector, BertHiddenLayerInjectionHook, BertAttentionMatrixKeyInjectionHook,\
+    BertAttentionMatrixValueInjectionHook, BertAttentionMatrixQueryInjectionHook
+from vizbert.model import ModelTrainer, LOSS_SIZE_KEY, LOSS_KEY, ClassificationLoss, LowRankProjectionTransform
 from vizbert.utils import expand_bert_classifier
 
 
@@ -74,11 +75,7 @@ def main():
 
     hooks = []
     if args.probe_path:
-        probe = ProjectionPursuitProbe(768,
-                                       args.probe_rank,
-                                       mask_first=args.mask_first,
-                                       optimize_mean=args.optimize_mean,
-                                       inverse=args.inverse)
+        probe = LowRankProjectionTransform(768, args.probe_rank)
         pws = TrainingWorkspace(args.probe_path)
         if args.use_zmt:
             zmt = ZeroMeanTransform(768, 2)
@@ -87,12 +84,10 @@ def main():
             pws.load_model(probe)
         except:
             pass
-        # w = torch.load('svd.pt')
-        # with torch.no_grad():
-        #     probe.probe_params[0].set_(torch.from_numpy(w)[0])
-        #     probe.probe_params[1].set_(torch.from_numpy(w)[1])
         probe.to(args.device)
-        hooks.append(BertHiddenLayerInjectionHook(probe, args.layer_idx - 1))
+        hooks.append(BertAttentionMatrixKeyInjectionHook(probe, args.layer_idx - 1))
+        hooks.append(BertAttentionMatrixValueInjectionHook(probe, args.layer_idx - 1))
+        hooks.append(BertAttentionMatrixQueryInjectionHook(probe, args.layer_idx - 1))
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     dws = DATA_WORKSPACE_CLASSES[args.dataset](args.data_folder)

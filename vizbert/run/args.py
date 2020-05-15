@@ -28,7 +28,6 @@ class ArgumentParserOption(object):
         if choices_init is not None:
             self.kwargs.setdefault('choices', choices_init())
 
-
     def __iter__(self):
         return iter((self.args, self.kwargs))
 
@@ -64,7 +63,7 @@ class OptionEnum(enum.Enum):
     OUTPUT_FILE = opt('--output-file', '-o', type=Path, required=True)
     WORKSPACE = opt('--workspace', '-w', type=Path, required=True)
     LAYER_IDX = opt('--layer-idx', '-l', type=int, required=True)
-    PROBE_RANK = opt('--probe-rank', type=int, default=2)
+    PROBE_RANK = opt('--probe-rank', type=int)
     MODEL = opt('--model', default='bert-base-cased', type=str)
     DEVICE = opt('--device', type=torch.device, default='cuda:0')
     LR = opt('--lr', type=float, default=5e-4)
