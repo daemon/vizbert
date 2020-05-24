@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Sequence
 
 from transformers import AutoConfig, AutoTokenizer, AutoModelForSequenceClassification, AdamW, get_linear_schedule_with_warmup
+from transformers.modeling_bert import BertSelfAttention
 import torch.utils.data as tud
 import torch
 
@@ -9,7 +10,7 @@ from .args import ArgumentParserBuilder, OptionEnum, opt
 from vizbert.data import DATA_WORKSPACE_CLASSES, ClassificationCollator, TrainingWorkspace, LabeledTextBatch, ZeroMeanTransform,\
     DataFrameDataset
 from vizbert.inject import ModelInjector, BertHiddenLayerInjectionHook, BertAttentionMatrixKeyInjectionHook,\
-    BertAttentionMatrixValueInjectionHook, BertAttentionMatrixQueryInjectionHook
+    BertAttentionMatrixValueInjectionHook, BertAttentionMatrixQueryInjectionHook, InstrumentModuleInjectionHook
 from vizbert.model import ModelTrainer, LOSS_SIZE_KEY, LOSS_KEY, ClassificationLoss, LowRankProjectionTransform
 from vizbert.utils import expand_bert_classifier
 
@@ -88,6 +89,8 @@ def main():
         hooks.append(BertAttentionMatrixKeyInjectionHook(probe, args.layer_idx - 1))
         hooks.append(BertAttentionMatrixValueInjectionHook(probe, args.layer_idx - 1))
         hooks.append(BertAttentionMatrixQueryInjectionHook(probe, args.layer_idx - 1))
+    module_hook = InstrumentModuleInjectionHook()
+    hooks.append(module_hook)
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     dws = DATA_WORKSPACE_CLASSES[args.dataset](args.data_folder)
@@ -143,8 +146,21 @@ def main():
     with injector:
         if args.eval_only:
             trainer.evaluate(trainer.dev_loader, header='Dev')
-            if datasets[2].labeled:
-                trainer.evaluate(trainer.test_loader, header='Test')
+            # if datasets[2].labeled:
+            #     trainer.evaluate(trainer.test_loader, header='Test')
+            timings = module_hook.timer.timings
+            print(timings.keys())
+            print(('encoder total', timings['encoder']),
+                  ('pooler total', timings['pooler']),
+                  sum(v for k, v in timings.items() if 'self.value' in k),
+                  sum(v for k, v in timings.items() if 'self.query' in k),
+                  sum(v for k, v in timings.items() if 'self.key' in k),
+                  ('all attn', sum(v for k, v in timings.items() if k.endswith('attention.self'))),
+                  ('odense', sum(v for k, v in timings.items() if k.endswith('output.dense'))),
+                  ('idense', sum(v for k, v in timings.items() if k.endswith('intermediate.dense'))),
+                  ('pdense', timings['pooler.dense']),
+                  ('qkmm', BertSelfAttention.qkmm_time),
+                  ('avmm', BertSelfAttention.avmm_time))
         else:
             trainer.train(test=datasets[2].labeled)
 

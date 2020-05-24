@@ -60,6 +60,7 @@ class ModelTrainer(object):
         all_losses = defaultdict(float)
         tot_loss = 0
         tot_len = 0
+        self.model.eval()
         cb = self.dev_feed_loss_callback if loader == self.dev_loader else self.test_feed_loss_callback
         with torch.no_grad():
             pbar = tqdm(loader, total=len(loader), position=1)
@@ -83,6 +84,7 @@ class ModelTrainer(object):
         do_exit = False
         for epoch_idx in trange(self.num_epochs, position=0):
             self.training = True
+            self.model.train()
             tot_steps = len(self.train_loader)
             if self.optimization_limit is not None:
                 tot_steps = min(tot_steps, self.optimization_limit - self.step_no)

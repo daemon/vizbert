@@ -7,7 +7,7 @@ from vizbert.data import ZeroMeanTransform
 from vizbert.utils import orth_tensor, full_batch_gs, full_batch_proj
 
 
-__all__ = ['InnerProductProbe', 'ProjectionPursuitProbe', 'LowRankProjectionTransform']
+__all__ = ['InnerProductProbe', 'ProjectionPursuitProbe', 'LowRankProjectionTransform', 'LowRankLinear']
 
 
 class InnerProductProbe(nn.Module):
@@ -28,6 +28,26 @@ class InnerProductProbe(nn.Module):
         return torch.einsum('bijg,bijg->bij', z, z)
 
 
+class LowRankLinear(nn.Module):
+
+    def __init__(self, in_features, rank, out_features):
+        super().__init__()
+        self.low1 = nn.Linear(in_features, rank, bias=False)
+        self.low2 = nn.Linear(rank, out_features, bias=True)
+        self.rank = rank
+
+    @torch.no_grad()
+    def init_pretrained(self, other: nn.Linear):
+        u, s, v = torch.svd(other.weight)
+        w = torch.diag(s[:self.rank]).matmul(v[:, :self.rank].t())
+        self.low1.weight.set_(w)
+        self.low2.weight.set_(u[:, :self.rank])
+        self.low2.bias.set_(other.bias)
+
+    def forward(self, x):
+        return self.low2(self.low1(x))
+
+
 class LowRankProjectionTransform(nn.Module):
 
     def __init__(self, num_features: int, rank: int):
@@ -35,10 +55,20 @@ class LowRankProjectionTransform(nn.Module):
         self.probe_params_ = [nn.Parameter(torch.empty(num_features, dtype=torch.float32).uniform_(-0.05, 0.05),
                                            requires_grad=True) for _ in range(rank)]
         self.probe_params = nn.ParameterList(self.probe_params_)
+        self.baked = False
 
     @property
     def orth_probe(self):
+        if self.baked:
+            return torch.stack(self.probe_params_, 1)
         return orth_tensor(torch.stack(self.probe_params_, 1))
+
+    @orth_probe.setter
+    def orth_probe(self, matrix):
+        self.baked = True
+        with torch.no_grad():
+            for v1, v2 in zip(matrix, self.probe_params_):
+                v2.set_(v1.to(v2.device))
 
     def forward(self, input: torch.Tensor):
         return full_batch_proj(self.orth_probe, input)

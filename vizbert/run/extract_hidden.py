@@ -1,51 +1,70 @@
 from pathlib import Path
-import argparse
+import multiprocessing as mp
+import sys
 
-from transformers import AutoTokenizer, AutoModel, AutoConfig
+from tqdm import tqdm
+from transformers import AutoTokenizer, BertForMaskedLM, BertForSequenceClassification, AutoConfig
+import torch
 import torch.utils.data as tud
 
-from vizbert.data import ConllTextCollator, ConllWorkspace
-from vizbert.extract import ModelStateExtractor, Gpt2HiddenStateExtractor, TransformerInputFeeder, \
-    BufferedFileOutputSerializer, BertHiddenStateExtractor, Gpt2AttentionKeyValueExtractor
+from .args import ArgumentParserBuilder, OptionEnum, opt
+from vizbert.data import TrainingWorkspace, ClassificationCollator, DATA_WORKSPACE_CLASSES
+from vizbert.model import ModelTrainer, LOSS_KEY, LOSS_SIZE_KEY, ReconstructionLoss, LowRankProjectionTransform
+
+
+def train(args):
+    def forward_hook(module, input, output):
+        hidden_states.append(output.cpu().detach())
+
+    dw = DATA_WORKSPACE_CLASSES[args.dataset](args.data_folder)
+    train_ds, dev_ds, test_ds = dw.load_splits()
+    config = AutoConfig.from_pretrained(args.model)
+    config.num_labels = train_ds.num_labels
+    model = BertForSequenceClassification.from_pretrained(args.model, config=config).to(args.device)
+    model.load_state_dict(torch.load(str(args.workspace / 'model.pt')))
+
+    tok_config = {}
+    if 'bert' in args.model:
+        tok_config['do_basic_tokenize'] = args.basic_tokenize
+    tokenizer = AutoTokenizer.from_pretrained(args.model, **tok_config)
+    hidden_states = []
+    outputs = []
+    layers = model.bert.encoder.layer
+    layer = layers[args.layer_idx - 1]
+    layer.output.register_forward_hook(forward_hook)
+
+    collator = ClassificationCollator(tokenizer, max_length=args.max_seq_len, multilabel=dev_ds.multilabel)
+    train_loader = tud.DataLoader(train_ds, batch_size=args.batch_size, pin_memory=True, collate_fn=collator,
+                                  shuffle=True, num_workers=args.num_workers)
+    model.eval()
+    for batch in tqdm(train_loader, total=len(train_loader)):
+        token_ids = batch.token_ids.to(args.device)
+        outputs.append(model(token_ids,
+                             attention_mask=batch.attention_mask.to(args.device),
+                             token_type_ids=batch.segment_ids.to(args.device))[0].cpu().detach())
+    torch.save((hidden_states, outputs), args.output_file)
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--folder', '-f', type=Path, required=True)
-    parser.add_argument('--layer-idx', '-l', type=int, required=True)
-    parser.add_argument('--model', type=str, default='gpt2')
-    parser.add_argument('--batch-size', '-bsz', type=int, default=50)
-    parser.add_argument('--do-basic-tokenize', action='store_true')
-    parser.add_argument('--extract-type', type=str, default='hidden', choices=['hidden', 'key', 'value', 'keyvalue'])
-    args = parser.parse_args()
+    apb = ArgumentParserBuilder()
+    apb.add_opts(OptionEnum.DATA_FOLDER,
+                 OptionEnum.MODEL,
+                 OptionEnum.NUM_WORKERS,
+                 OptionEnum.DEVICE,
+                 OptionEnum.BATCH_SIZE,
+                 OptionEnum.DATASET,
+                 OptionEnum.MAX_SEQ_LEN,
+                 OptionEnum.LAYER_IDX,
+                 opt('--output-file', '-o', type=str, required=True),
+                 opt('--checkpoint', type=str, default='checkpoint.pt'),
+                 opt('--workspace', '-w', type=Path, required=True),
+                 opt('--no-basic-tokenize', action='store_false', dest='basic_tokenize'),
+                 opt('--num-features', type=int, default=768))
 
-    tok_config = dict()
-    if 'bert' in args.model:
-        tok_config = dict(do_basic_tokenize=args.do_basic_tokenize)
-    tokenizer = AutoTokenizer.from_pretrained(args.model, **tok_config)
-    config = AutoConfig.from_pretrained(args.model)
-    config.output_hidden_states = True
-    model = AutoModel.from_pretrained(args.model, config=config)
-
-    workspace = ConllWorkspace(args.folder)
-    train_ds, dev_ds, test_ds = workspace.load_splits()
-    collator = ConllTextCollator(tokenizer)
-
-    model.cuda()
-    model.eval()
-    model.config.output_hidden = True
-    for ds, name in zip((train_ds, dev_ds, test_ds), ('train.gold.conll', 'dev.gold.conll', 'test.gold.conll')):
-        loader = tud.DataLoader(ds, collate_fn=collator, batch_size=args.batch_size, pin_memory=True)
-        feeder = TransformerInputFeeder(loader, device='cuda')
-        serializer = BufferedFileOutputSerializer(workspace.make_hidden_state_filename(name, args.layer_idx))
-        if 'gpt2' in args.model and args.extract_type == 'hidden':
-            extractor = Gpt2HiddenStateExtractor(args.layer_idx)
-        elif 'bert' in args.model and args.extract_type == 'hidden':
-            extractor = BertHiddenStateExtractor(args.layer_idx)
-        elif 'gpt2' in args.model:
-            extractor = Gpt2AttentionKeyValueExtractor(args.layer_idx, extract=args.extract_type)
-        state_extractor = ModelStateExtractor(model, feeder, serializer, output_extractors=[extractor])
-        state_extractor.extract()
+    args = apb.parser.parse_args()
+    if args.num_workers is None:
+        args.num_workers = mp.cpu_count()
+    train(args)
 
 
 if __name__ == '__main__':

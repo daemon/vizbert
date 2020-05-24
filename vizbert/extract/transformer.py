@@ -48,5 +48,5 @@ class BertHiddenStateExtractor(OutputExtractor):
         self.layer_idx = layer_idx
 
     def __call__(self, output):
-        hidden = output[2][self.layer_idx][:, 1:]
+        hidden = output[2][self.layer_idx]
         return dict(hidden_state=hidden.cpu().detach())
