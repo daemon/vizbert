@@ -29,12 +29,14 @@ def train(args):
         model.zero_grad()
         model2.zero_grad()
         if not trainer.training:
+            if dev_ds.multilabel:
+                scores = (scores > 0).float()
             all_scores.append(scores.detach())
             all_gold_scores.append(batch.labels.to(scores.device))
-        if batch.labels is not None:
+        if batch.labels is not None and not dev_ds.multilabel:
             accuracy = (batch.labels.to(scores.device) == scores.max(1)[1]).float().sum() / token_ids.size(0)
         else:
-            accuracy = 0
+            accuracy = torch.zeros(1).to(scores.device)
         if trainer.training:
             scheduler.step()
         return {LOSS_KEY: loss,
@@ -119,13 +121,18 @@ def train(args):
         all_scores = []
         all_gold_scores = []
         trainer.evaluate(trainer.dev_loader, 'Dev')
-        quality = train_ds.evaluate_metrics(torch.cat(all_scores), torch.cat(all_gold_scores))[args.quality_key].item()
-        print(quality)
-        if not args.eval_only:
-            torch.save(model, args.checkpoint)
-            if quality > args.orig_quality * 0.95:
-                print(f'found {rank}')
-                break
+        try:
+            qualities = train_ds.evaluate_metrics(torch.cat(all_scores), torch.cat(all_gold_scores))
+            print(qualities)
+            quality = qualities[args.quality_key].item()
+            print(quality)
+            if not args.eval_only:
+                torch.save(model, args.checkpoint)
+                if quality > args.orig_quality * 0.95:
+                    print(f'found {rank}')
+                    break
+        except:
+            pass
 
 
 def main():

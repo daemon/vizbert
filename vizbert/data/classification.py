@@ -189,7 +189,7 @@ class ReutersWorkspace(object):
         def load(filename):
             df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False, header=None, dtype=str)
             df.columns = [LABEL_COLUMN, SENTENCE1_COLUMN]
-            return DataFrameDataset(df, num_labels=90, labeled=True, multilabel=True, metrics=('recall', 'precision'))
+            return DataFrameDataset(df, num_labels=90, labeled=True, multilabel=True, metrics=('recall', 'precision', 'f1'))
         return [load(str(self.folder / f'{set_type}.tsv')) for set_type in splits]
 
 

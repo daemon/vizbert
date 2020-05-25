@@ -53,7 +53,7 @@ class ReconstructionLoss(nn.Module):
 
     def forward(self, scores, gold_scores, *args):
         if self.regression:
-            return self.criterion(scores, gold_scores)
+            return self.criterion(F.sigmoid(scores), F.sigmoid(gold_scores))
         else:
             return self.criterion(F.softmax(scores, -1), F.softmax(gold_scores, -1))
 

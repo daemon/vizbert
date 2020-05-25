@@ -59,16 +59,23 @@ class RecallMetric(Metric, name='recall'):
         return (((scores > 0) & (gold > 0)).float().sum(-1) / gold.float().sum(-1)).mean()
 
 
+class F1Metric(Metric, name='f1'):
+
+    def _evaluate(self, scores: torch.Tensor, gold: torch.Tensor):
+        recall = (((scores > 0) & (gold > 0)).float().sum(-1) / gold.float().sum(-1)).mean()
+        sum_scores = scores.float().sum(-1)
+        sum_scores[sum_scores == 0] = 1
+        prec = (((scores > 0) & (gold > 0)).float().sum(-1) / sum_scores).mean()
+        return 2 * prec * recall / (prec + recall)
+
+
 class PrecisionMetric(Metric, name='precision'):
 
     def _evaluate(self, scores: torch.Tensor, gold: torch.Tensor):
-        num_nnz_scores = (scores > 0).float().sum(-1)
-        if num_nnz_scores.sum().item() == 0:
-            return torch.zeros(1).to(scores.device)
-        scores = scores[num_nnz_scores > 0]
-        gold = gold[num_nnz_scores > 0]
-        prec = ((scores > 0) & (gold > 0)).float().sum(-1) / num_nnz_scores[num_nnz_scores > 0].sum(-1)
-        return prec.mean()
+        sum_scores = scores.float().sum(-1)
+        sum_scores[sum_scores == 0] = 1
+        prec = (((scores > 0) & (gold > 0)).float().sum(-1) / sum_scores).mean()
+        return prec
 
 
 class PearsonrMetric(Metric, name='pearsonr'):
