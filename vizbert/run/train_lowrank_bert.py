@@ -75,10 +75,11 @@ def train(args):
         # lrsa = LowRankBertSelfAttention(model.config, rank).to(args.device).init_pretrained(layer.attention.self)
         # lrso = LowRankBertSelfOutput(model.config, rank).to(args.device).init_pretrained(layer.attention.output)
 
-        layer.output = lro
-        # layer.intermediate = lri
-        # layer.attention.self = lrsa
-        # layer.attention.output = lrso
+        if rank != 768:
+            layer.output = lro
+            # layer.intermediate = lri
+            # layer.attention.self = lrsa
+            # layer.attention.output = lrso
 
         params.extend(lro.low_rank_parameters())
         # params.extend(lri.low_rank_parameters())
