@@ -45,13 +45,17 @@ class DistanceMatrixLoss(nn.Module):
 
 class ReconstructionLoss(nn.Module):
 
-    def __init__(self, multilabel=False):
+    def __init__(self, multilabel=False, regression=False):
         super().__init__()
-        self.criterion = nn.L1Loss()
+        self.criterion = nn.MSELoss() if regression else nn.L1Loss()
         self.multilabel = multilabel
+        self.regression = regression
 
     def forward(self, scores, gold_scores, *args):
-        return self.criterion(F.softmax(scores, -1), F.softmax(gold_scores, -1))
+        if self.regression:
+            return self.criterion(scores, gold_scores)
+        else:
+            return self.criterion(F.softmax(scores, -1), F.softmax(gold_scores, -1))
 
 
 class ClassificationLoss(nn.Module):

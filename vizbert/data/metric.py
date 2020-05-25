@@ -1,5 +1,6 @@
 from typing import Sequence
 
+from scipy.stats import pearsonr, spearmanr
 import torch
 
 
@@ -68,3 +69,15 @@ class PrecisionMetric(Metric, name='precision'):
         gold = gold[num_nnz_scores > 0]
         prec = ((scores > 0) & (gold > 0)).float().sum(-1) / num_nnz_scores[num_nnz_scores > 0].sum(-1)
         return prec.mean()
+
+
+class PearsonrMetric(Metric, name='pearsonr'):
+
+    def _evaluate(self, scores: torch.Tensor, gold: torch.Tensor):
+        return torch.Tensor([pearsonr(scores.squeeze().tolist(), gold.squeeze().tolist())[0]])
+
+
+class SpearmanrMetric(Metric, name='spearmanr'):
+
+    def _evaluate(self, scores: torch.Tensor, gold: torch.Tensor):
+        return torch.Tensor([spearmanr(scores.squeeze().tolist(), gold.squeeze().tolist())[0]])

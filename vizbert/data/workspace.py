@@ -8,7 +8,7 @@ from torch.utils.tensorboard import SummaryWriter
 import torch
 
 from .classification import Sst2Workspace, ReutersWorkspace, ImdbWorkspace, AapdWorkspace, Sst5Workspace, ColaWorkspace,\
-    MismatchedMnliWorkspace, MatchedMnliWorkspace, ImdbDytangWorkspace, CleanedImdbDytangWorkspace, CleanedImdbWorkspace
+    MismatchedMnliWorkspace, MatchedMnliWorkspace, ImdbDytangWorkspace, CleanedImdbDytangWorkspace, CleanedImdbWorkspace, StsbWorkspace
 from vizbert.data import ConllDataset
 from vizbert.utils import JSON_PRIMITIVES
 
@@ -99,4 +99,5 @@ DATA_WORKSPACE_CLASSES = dict(conll=ConllWorkspace,
                               mnli_m=MatchedMnliWorkspace,
                               imdb_dyt=ImdbDytangWorkspace,
                               imdb_dyt_clean=CleanedImdbDytangWorkspace,
-                              imdb_clean=CleanedImdbWorkspace)
+                              imdb_clean=CleanedImdbWorkspace,
+                              stsb=StsbWorkspace)

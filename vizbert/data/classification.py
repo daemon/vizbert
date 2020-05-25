@@ -33,6 +33,7 @@ INDEX_COLUMN = 'index'
 SENTENCE1_COLUMN = 'sentence1'
 SENTENCE2_COLUMN = 'sentence2'
 LABEL_COLUMN = 'label'
+SCORE_COLUMN = 'score'
 LABEL_NAMES_COLUMN = 'label_names'
 SENTENCE_SEPARATOR = '<sssss>'
 
@@ -93,6 +94,8 @@ class ClassificationCollator(object):
                     labels.append(list(map(int, ex[LABEL_COLUMN])))
                 else:
                     labels.append(ex[LABEL_COLUMN])
+            elif SCORE_COLUMN in ex:
+                labels.append(float(ex[SCORE_COLUMN]))
         max_len = max(len(x) for x in token_ids)
         masks = torch.tensor([x + ([0] * (max_len - len(x))) for x in masks])
         segment_ids = torch.tensor([x + ([0] * (max_len - len(x))) for x in segment_ids])
@@ -132,6 +135,23 @@ class Sst2Workspace(object):
                 df.columns = [INDEX_COLUMN, SENTENCE1_COLUMN]
                 labeled = False
             return DataFrameDataset(df, num_labels=2, labeled=labeled, metrics=('accuracy',))
+        return [load(str(self.folder / f'{set_type}.tsv'), set_type) for set_type in splits]
+
+
+@dataclass
+class StsbWorkspace(object):
+    folder: Path
+
+    def load_splits(self, splits=('train', 'dev', 'test')):
+        def load(filename, set_type):
+            df = pd.read_csv(filename, sep='\t', quoting=3, error_bad_lines=False)
+            if set_type in {'dev', 'train'}:
+                df.columns = ['uu1', 'uu2', 'uu3', 'uu4', 'uu5', 'uu6', 'uu7', SENTENCE1_COLUMN, SENTENCE2_COLUMN, SCORE_COLUMN]
+                labeled = True
+            else:
+                df.columns = ['uu1', 'uu2', 'uu3', 'uu4', 'uu5', 'uu6', 'uu7', SENTENCE1_COLUMN, SENTENCE2_COLUMN]
+                labeled = False
+            return DataFrameDataset(df, num_labels=1, labeled=labeled, metrics=('pearsonr', 'spearmanr'))
         return [load(str(self.folder / f'{set_type}.tsv'), set_type) for set_type in splits]
 
 

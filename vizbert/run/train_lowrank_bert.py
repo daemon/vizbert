@@ -60,12 +60,12 @@ def train(args):
             model.load_state_dict(torch.load(str(args.load_weights / 'model.pt')))
             model2.load_state_dict(torch.load(str(args.load_weights / 'model.pt')))
 
-        workspace = TrainingWorkspace(Path(f'{args.workspace_prefix}-kqv-{args.dataset}-r{rank}'))
+        workspace = TrainingWorkspace(Path(f'{args.workspace_prefix}-kqv-{args.dataset}-l{args.layer_idx}-r{rank}'))
         tok_config = {}
         if 'bert' in args.model:
             tok_config['do_basic_tokenize'] = args.basic_tokenize
         tokenizer = AutoTokenizer.from_pretrained(args.model, **tok_config)
-        criterion = ReconstructionLoss(multilabel=dev_ds.multilabel)
+        criterion = ReconstructionLoss(multilabel=dev_ds.multilabel, regression=train_ds.num_labels == 1)
         params = []
         layers = model.bert.encoder.layer
         layer = layers[args.layer_idx - 1]
@@ -107,7 +107,7 @@ def train(args):
         steps = min(len(train_loader) * args.num_epochs, args.opt_limit)
         scheduler = get_linear_schedule_with_warmup(optimizer, steps // 10, steps)
         trainer = ModelTrainer((train_loader, dev_loader, test_loader),
-                               model,
+                               lro,
                                workspace,
                                optimizer,
                                args.num_epochs,
@@ -119,6 +119,7 @@ def train(args):
         all_gold_scores = []
         trainer.evaluate(trainer.dev_loader, 'Dev')
         quality = train_ds.evaluate_metrics(torch.cat(all_scores), torch.cat(all_gold_scores))[args.quality_key].item()
+        print(quality)
         if not args.eval_only:
             torch.save(model, args.checkpoint)
             if quality > args.orig_quality * 0.95:
